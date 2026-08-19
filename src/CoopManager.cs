@@ -239,6 +239,7 @@ namespace HKCouchCoop
         {
             while (Extras.Count > 0) Remove(Extras[Extras.Count - 1]);
             ShadeRevive.ForceRestoreBank();
+            _extrasFrozen = false;   // session state must not leak into the next one
         }
 
         /// <summary>Removes whichever player is holding this pad.</summary>
