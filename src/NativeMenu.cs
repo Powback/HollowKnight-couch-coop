@@ -315,18 +315,113 @@ namespace HKCouchCoop
         /// localisation everywhere — on the value text too, or a failed lookup
         /// overwrites our strings.
         /// </summary>
+        internal static void StripLocalizers(GameObject go)
+        {
+            // Deferred Destroy let localizers re-apply their key over our text
+            // for one frame cycle — the "Key - English" bleed. Immediate only.
+            foreach (var comp in go.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                if (comp != null && comp.GetType().Name.IndexOf("Localiz",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    UnityEngine.Object.DestroyImmediate(comp);
+            }
+        }
+
         private static void SetLabel(GameObject go, MenuOptionHorizontal option, string label)
         {
+            StripLocalizers(go);
             foreach (var text in go.GetComponentsInChildren<Text>(includeInactive: true))
-            {
-                foreach (var comp in text.GetComponents<MonoBehaviour>())
-                {
-                    if (comp != null && comp.GetType().Name.IndexOf("Localiz",
-                            StringComparison.OrdinalIgnoreCase) >= 0)
-                        UnityEngine.Object.Destroy(comp);
-                }
                 if (text != option.optionText) text.text = label;
+            foreach (var tmp in go.GetComponentsInChildren<TMPro.TMP_Text>(includeInactive: true))
+                tmp.text = label;
+        }
+
+        /// <summary>
+        /// Build everything into a dedicated screen: measure geometry from its
+        /// vanilla rows, purge them, lay our full row set into their place, and
+        /// rewire its MenuButtonList (keeping non-row entries like Back).
+        /// </summary>
+        internal static void BuildIntoScreen(MenuScreen screen, List<MenuOptionHorizontal> vanillaRows)
+        {
+            var template = vanillaRows[0];
+            var parent = template.transform.parent;
+            var top = template.transform.localPosition;
+            float spacing;
+            if (vanillaRows.Count >= 2)
+                spacing = Mathf.Abs(vanillaRows[0].transform.localPosition.y
+                                    - vanillaRows[1].transform.localPosition.y);
+            else
+            {
+                var rt = template.GetComponent<RectTransform>();
+                spacing = rt != null ? rt.rect.height * 1.15f : 60f;
             }
+            spacing *= 0.85f;   // our set is longer than vanilla's
+
+            var created = new List<MenuOptionHorizontal>();
+            var index = -1;
+            foreach (var row in BuildRows())
+            {
+                var clone = CloneRow(template, row);
+                if (clone == null) continue;
+                clone.transform.SetParent(parent, worldPositionStays: false);
+                clone.transform.localPosition = new Vector3(top.x, top.y - spacing * (++index), top.z);
+                created.Add(clone);
+            }
+            for (var k = 0; k < PadRowPool; k++)
+            {
+                var padRow = CloneRow(template, new Row
+                {
+                    Label = "Input", Options = RoleNames, Get = () => 0, Set = _ => { },
+                });
+                if (padRow == null) continue;
+                padRow.transform.SetParent(parent, worldPositionStays: false);
+                padRow.transform.localPosition = new Vector3(top.x, top.y - spacing * (++index), top.z);
+                padRow.name = RowPrefix + "Pad_" + k;
+                PadRows.Add(padRow);
+                created.Add(padRow);
+            }
+            RefreshPadRows();
+
+            foreach (var vr in vanillaRows)
+                if (vr != null) UnityEngine.Object.DestroyImmediate(vr.gameObject);
+
+            RewireButtonList(screen, created.Cast<Selectable>().ToList(), keepNonRows: true);
+            Plugin.Log.LogInfo($"Multiplayer screen: {created.Count} rows placed.");
+        }
+
+        internal static void AppendToButtonList(MenuScreen screen, Selectable extra)
+            => RewireButtonList(screen, new List<Selectable> { extra }, keepNonRows: false, keepAll: true);
+
+        private static void RewireButtonList(
+            MenuScreen screen, List<Selectable> additions, bool keepNonRows, bool keepAll = false)
+        {
+            var list = screen.GetComponentInChildren<MenuButtonList>(includeInactive: true);
+            if (list == null) return;
+            var entriesField = AccessTools.Field(typeof(MenuButtonList), "entries");
+            var entryType = typeof(MenuButtonList).GetNestedType("Entry", BindingFlags.NonPublic);
+            if (entriesField == null || entryType == null) return;
+            var selectableField = AccessTools.Field(entryType, "selectable");
+
+            var kept = new List<object>();
+            if (entriesField.GetValue(list) is Array existing)
+                foreach (var e in existing)
+                {
+                    var sel = selectableField?.GetValue(e) as Selectable;
+                    if (sel == null) continue;
+                    if (keepAll || (keepNonRows && !(sel is MenuOptionHorizontal)) )
+                        kept.Add(e);
+                }
+
+            var merged = Array.CreateInstance(entryType, kept.Count + additions.Count);
+            for (var i = 0; i < kept.Count; i++) merged.SetValue(kept[i], i);
+            for (var i = 0; i < additions.Count; i++)
+            {
+                var entry = Activator.CreateInstance(entryType);
+                selectableField?.SetValue(entry, additions[i]);
+                merged.SetValue(entry, kept.Count + i);
+            }
+            entriesField.SetValue(list, merged);
+            list.SetupActive();
         }
 
         /// <summary>
@@ -377,7 +472,11 @@ namespace HKCouchCoop
     internal static class GameOptionsInjector
     {
         private static void Postfix(GameMenuOptions __instance)
-            => NativeMenu.Inject(__instance.gameOptionsMenuScreen);
+        {
+            MultiplayerScreen.Ensure();
+            if (MultiplayerScreen.Ready) return;   // settings live on their own screen
+            NativeMenu.Inject(__instance.gameOptionsMenuScreen);
+        }
     }
 
     /// <summary>UpdateSetting is the single point a row's change flows through.</summary>
