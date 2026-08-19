@@ -67,6 +67,28 @@ namespace HKCouchCoop
                 },
                 new Row
                 {
+                    Label = "Leash Distance",
+                    Options = new[] { "Off", "Short", "Normal", "Long" },
+                    Get = () =>
+                    {
+                        var v = c.LeashDistance.Value;
+                        return v <= 0 ? 0 : v < 25 ? 1 : v < 45 ? 2 : 3;
+                    },
+                    Set = i => c.LeashDistance.Value = new[] { 0f, 15f, 30f, 60f }[Mathf.Clamp(i, 0, 3)],
+                },
+                new Row
+                {
+                    Label = "Revive Masks",
+                    Options = new[] { "Quarter", "Half", "Most", "Full" },
+                    Get = () =>
+                    {
+                        var v = c.ReviveHealthPercent.Value;
+                        return v <= 30 ? 0 : v <= 55 ? 1 : v <= 80 ? 2 : 3;
+                    },
+                    Set = i => c.ReviveHealthPercent.Value = new[] { 25, 50, 75, 100 }[Mathf.Clamp(i, 0, 3)],
+                },
+                new Row
+                {
                     Label = "Player Colors",
                     Options = new[] { "Off", "On" },
                     Get = () => c.PlayerTints.Value ? 1 : 0,

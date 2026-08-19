@@ -24,8 +24,7 @@ namespace HKCouchCoop
     /// </summary>
     internal static class StartJoin
     {
-        /// <summary>Seconds a joined player holds Start to drop out.</summary>
-        private const float LeaveHold = 1.2f;
+        private static float LeaveHold => Plugin.Cfg.LeaveHoldSeconds.Value;
 
         private static readonly Dictionary<InputDevice, float> HeldSince =
             new Dictionary<InputDevice, float>();

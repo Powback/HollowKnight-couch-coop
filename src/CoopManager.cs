@@ -65,6 +65,9 @@ namespace HKCouchCoop
 
         private static bool _sceneChangePending;
 
+        /// <summary>Why the last Join call refused — surfaced on the HUD by callers.</summary>
+        internal static string LastJoinRejection;
+
         internal static void Init()
         {
             USceneManager.activeSceneChanged += OnSceneChanged;
@@ -98,6 +101,7 @@ namespace HKCouchCoop
             var p1 = HeroController.instance;
             if (p1 == null)
             {
+                LastJoinRejection = "Load a save first";
                 Plugin.Log.LogWarning("Cannot join: no player one yet. Load a save first.");
                 return;
             }
@@ -107,6 +111,7 @@ namespace HKCouchCoop
             if (GameManager.instance == null
                 || GameManager.instance.gameState != GlobalEnums.GameState.PLAYING)
             {
+                LastJoinRejection = "Can only join during gameplay";
                 Plugin.Log.LogInfo("Join ignored: not in gameplay right now.");
                 return;
             }
@@ -114,6 +119,7 @@ namespace HKCouchCoop
             var max = Mathf.Clamp(Plugin.Cfg.MaxPlayers.Value, 2, 4);
             if (PlayerCount >= max)
             {
+                LastJoinRejection = $"Player limit ({max}) reached";
                 Plugin.Log.LogInfo($"Already at the {max}-player limit.");
                 return;
             }
@@ -121,6 +127,7 @@ namespace HKCouchCoop
             device = device ?? PadInput.NextFreeDevice();
             if (device == null)
             {
+                LastJoinRejection = "No free gamepad";
                 Plugin.Log.LogWarning("No free gamepad. Plug in another controller and press join again.");
                 return;
             }
@@ -166,7 +173,8 @@ namespace HKCouchCoop
             var pd = PlayerData.instance;
             player.Hero = hero;
             player.Downed = false;
-            player.Health = pd != null ? Mathf.Max(1, Mathf.CeilToInt(pd.CurrentMaxHealth / 2f)) : 3;
+            var pct = Mathf.Clamp(Plugin.Cfg.ReviveHealthPercent.Value, 10, 100) / 100f;
+            player.Health = pd != null ? Mathf.Max(1, Mathf.CeilToInt(pd.CurrentMaxHealth * pct)) : 3;
             player.HealthBlue = 0;
 
             NativeHud.Notify($"Player {player.Number} revived");
@@ -308,7 +316,8 @@ namespace HKCouchCoop
         /// </summary>
         private static void SyncCutsceneFreeze(HeroController p1)
         {
-            var shouldFreeze = p1.controlReqlinquished
+            var shouldFreeze = Plugin.Cfg.FreezeExtrasInCutscenes.Value
+                && p1.controlReqlinquished
                 && GameManager.instance != null
                 && !GameManager.instance.isPaused;
 

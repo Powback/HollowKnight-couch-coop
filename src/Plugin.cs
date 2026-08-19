@@ -19,6 +19,9 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<float> LeashDistance;
         internal readonly ConfigEntry<bool> IgnoreVersionCheck;
 
+        internal readonly ConfigEntry<int> ReviveHealthPercent;
+        internal readonly ConfigEntry<float> LeaveHoldSeconds;
+        internal readonly ConfigEntry<bool> FreezeExtrasInCutscenes;
         internal readonly ConfigEntry<bool> PlayerTints;
         internal readonly ConfigEntry<bool> CameraZoom;
         internal readonly ConfigEntry<float> MaxZoomFactor;
@@ -54,6 +57,13 @@ namespace HKCouchCoop
             IgnoreVersionCheck = f.Bind("General", "IgnoreVersionCheck", false,
                 "Load even if the game version does not match the one this build targets.");
 
+            ReviveHealthPercent = f.Bind("General", "ReviveHealthPercent", 50,
+                "Masks a revived player comes back with, as a percent of max health (10-100).");
+            LeaveHoldSeconds = f.Bind("General", "LeaveHoldSeconds", 1.2f,
+                "How long a joined player holds Start to leave. Raise it if players drop out by accident.");
+            FreezeExtrasInCutscenes = f.Bind("General", "FreezeExtrasInCutscenes", true,
+                "Freeze extra players whenever the game takes control from player one (dialogue, " +
+                "cutscenes) so nobody wanders through story moments. Off = extras stay free.");
             PlayerTints = f.Bind("General", "PlayerTints", true,
                 "Give each extra player a soft color cast (blue, ember, green) so everyone " +
                 "stays identifiable. Off = all Knights look identical.");
@@ -68,7 +78,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.5.0")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -136,7 +146,7 @@ namespace HKCouchCoop
 
                 NativeHud.Notify(after > before
                     ? $"Player {after} joined  —  {after} players"
-                    : "No free gamepad");
+                    : (CoopManager.LastJoinRejection ?? "Could not join"));
                 if (after > before) CoopCamera.Reset();
             }
 
