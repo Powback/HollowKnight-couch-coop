@@ -35,11 +35,17 @@ namespace HKCouchCoop
         private static readonly ConditionalWeakTable<Fsm, OwnerBox> WorldTrigger =
             new ConditionalWeakTable<Fsm, OwnerBox>();
 
+        /// <summary>The extra Knight currently driving a world interaction
+        /// (bench, NPC dialogue), if any. Menu-class input follows them while
+        /// their conversation holds them (control relinquished).</summary>
+        internal static HeroController InteractionOwner;
+
         /// <summary>Claim (extra) or clear (null / player one) a world FSM.</summary>
         internal static void ClaimWorldFsm(Fsm fsm, HeroController hero)
         {
             if (fsm == null) return;
             WorldTrigger.GetValue(fsm, _ => new OwnerBox()).Hero = hero;
+            InteractionOwner = hero;
         }
 
         internal static Masquerade<HeroController>.Scope BeginFor(Fsm fsm)

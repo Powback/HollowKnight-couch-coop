@@ -180,3 +180,48 @@ namespace HKCouchCoop
         { __state?.Restore(); return __exception; }
     }
 }
+
+namespace HKCouchCoop
+{
+    /// <summary>
+    /// Rumble belongs to the Knight it happened to. Vanilla resolves ONE
+    /// global mixer from InputManager.ActiveDevice — whoever touched their
+    /// pad last feels everyone's hits. Route by acting context instead: the
+    /// masquerade identifies an extra's vibration (their FSM effects), whose
+    /// own pad gets the mixer; player one's vibrations go to player one's
+    /// assigned pad — or nowhere when player one is keyboard.
+    /// </summary>
+    [HarmonyPatch(typeof(VibrationManager), nameof(VibrationManager.GetMixer))]
+    internal static class VibrationRoutePatch
+    {
+        private static bool Prefix(ref VibrationMixer __result)
+        {
+            var handled = Guard.Run(() =>
+            {
+                if (!CoopManager.Active) return false;
+
+                InControl.InputDevice device;
+                var acting = Reflect.HeroInstance;   // masquerade = acting Knight
+                var extra = CoopManager.FindExtra(acting);
+                if (extra != null)
+                    device = extra.Input?.Device;
+                else
+                    device = InputAssign.P1Device();  // null = keyboard P1: silence
+
+                VibrationMixer mixer = null;
+                if (device != null && device.IsAttached
+                    && device is VibrationManager.IVibrationMixerProvider provider)
+                    mixer = provider.GetVibrationMixer();
+
+                _routed = mixer;
+                return true;
+            }, false, "Vibration route");
+
+            if (!handled) return true;
+            __result = _routed;
+            return false;
+        }
+
+        private static VibrationMixer _routed;
+    }
+}

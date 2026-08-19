@@ -77,17 +77,20 @@ namespace HKCouchCoop
             foreach (var row in Rows) Refresh(row);
         }
 
-        /// <summary>Reflect a world position through the HUD's horizontal center.</summary>
-        private static Vector3 MirrorWorld(Transform canvas, Vector3 world)
+        /// <summary>
+        /// Corner mapping via the HUD camera's actual viewport — the only
+        /// mirror line that is guaranteed to match what's on screen (canvas
+        /// rect assumptions put the first build's rows on top of the vanilla
+        /// ones). x mirrors through the horizontal screen center, y through
+        /// the vertical center; corners per player: P2 top-right, P3
+        /// bottom-left, P4 bottom-right.
+        /// </summary>
+        private static Vector3 CornerMap(Camera hudCam, Vector3 world, bool mirrorX, bool mirrorY)
         {
-            var local = canvas.InverseTransformPoint(world);
-
-            float centerX = 0f;
-            var rect = canvas.GetComponent<RectTransform>();
-            if (rect != null) centerX = rect.rect.center.x;
-
-            local.x = 2f * centerX - local.x;
-            return canvas.TransformPoint(local);
+            var vp = hudCam.WorldToViewportPoint(world);
+            if (mirrorX) vp.x = 1f - vp.x;
+            if (mirrorY) vp.y = 1f - vp.y;
+            return hudCam.ViewportToWorldPoint(vp);
         }
 
         private static void Build(List<CoopPlayer> players, int slots)
@@ -109,13 +112,16 @@ namespace HKCouchCoop
                 return;
             }
 
+            var hudCam = cameras.hudCamera;
+            if (hudCam == null)
+            {
+                DumpOnce(cameras.hudCanvas);
+                _broken = true;
+                return;
+            }
+
             var first = vanilla[0];
             var stepWorld = vanilla[1].position - vanilla[0].position;
-
-            // Row height from what the mask actually measures on screen.
-            var firstSprite = first.GetComponent<tk2dSprite>();
-            var maskBounds = firstSprite.GetBounds();
-            var rowDrop = new Vector3(0f, -(maskBounds.size.y * 1.35f), 0f);
 
             // The vanilla soul orb, for per-row cloning. Optional: rows work
             // without it if the orb's structure defies identification.
@@ -128,14 +134,29 @@ namespace HKCouchCoop
                 row.Root.SetActive(false);   // build cold: no cloned Awake may run
                 row.Root.transform.SetParent(first.parent, worldPositionStays: false);
 
-                var rowOffset = rowDrop * p;
+                // Seat → corner: P2 top-right, P3 bottom-left, P4 bottom-right.
+                var seat = players[p].Number;
+                var mirrorX = seat == 2 || seat == 4;
+                var mirrorY = seat == 3 || seat == 4;
+
+                // Mirror-sanity: if the mapped row lands on the vanilla row,
+                // the geometry is wrong — hide rather than stack.
+                var probe = CornerMap(hudCam, first.position, mirrorX, mirrorY);
+                if ((probe - first.position).sqrMagnitude < 1f)
+                {
+                    DumpOnce(cameras.hudCanvas);
+                    _broken = true;
+                    Object.Destroy(row.Root);
+                    return;
+                }
 
                 for (var i = 0; i < slots; i++)
                 {
-                    // Mirror each vanilla slot position so spacing and scale are
-                    // exactly the real row's, reflected.
+                    // Mirror each vanilla slot's screen position so spacing and
+                    // margins are exactly the real row's, reflected. Mirrored-x
+                    // rows grow leftward from the right edge automatically.
                     var srcWorld = first.position + stepWorld * i;
-                    var dstWorld = MirrorWorld(canvas, srcWorld) + rowOffset;
+                    var dstWorld = CornerMap(hudCam, srcWorld, mirrorX, mirrorY);
 
                     var mask = Object.Instantiate(first.gameObject, row.Root.transform, worldPositionStays: true);
                     mask.name = $"Mask {i + 1}";
@@ -152,7 +173,7 @@ namespace HKCouchCoop
 
                 if (orbSource != null && _orb != null)
                 {
-                    var orbWorld = MirrorWorld(canvas, orbSource.transform.position) + rowOffset;
+                    var orbWorld = CornerMap(hudCam, orbSource.transform.position, mirrorX, mirrorY);
                     var orb = Object.Instantiate(orbSource, row.Root.transform, worldPositionStays: true);
                     orb.name = "Soul Orb";
                     orb.transform.position = orbWorld;

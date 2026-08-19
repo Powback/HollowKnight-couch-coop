@@ -77,14 +77,14 @@ namespace HKCouchCoop
                 },
                 new Row
                 {
-                    Label = "Leash Distance",
-                    Options = new[] { "Off", "Short", "Normal", "Long" },
+                    Label = "Leash",
+                    Options = new[] { "Off", "Screen", "Near", "Far" },
                     Get = () =>
                     {
                         var v = c.LeashDistance.Value;
-                        return v <= 0 ? 0 : v < 25 ? 1 : v < 45 ? 2 : 3;
+                        return v == 0 ? 0 : v < 0 ? 1 : v < 35 ? 2 : 3;
                     },
-                    Set = i => c.LeashDistance.Value = new[] { 0f, 15f, 30f, 60f }[Mathf.Clamp(i, 0, 3)],
+                    Set = i => c.LeashDistance.Value = new[] { 0f, -1f, 20f, 50f }[Mathf.Clamp(i, 0, 3)],
                 },
                 new Row
                 {
@@ -118,13 +118,13 @@ namespace HKCouchCoop
                 new Row
                 {
                     Label = "Zoom Range",
-                    Options = new[] { "Tight", "Normal", "Wide" },
+                    Options = new[] { "Tight", "Normal", "Wide", "Stage" },
                     Get = () =>
                     {
                         var v = c.MaxZoomFactor.Value;
-                        return v < 1.45f ? 0 : v < 1.8f ? 1 : 2;
+                        return v < 1.45f ? 0 : v < 1.9f ? 1 : v < 3f ? 2 : 3;
                     },
-                    Set = i => c.MaxZoomFactor.Value = new[] { 1.3f, 1.6f, 2.0f }[Mathf.Clamp(i, 0, 2)],
+                    Set = i => c.MaxZoomFactor.Value = new[] { 1.3f, 1.6f, 2.4f, 99f }[Mathf.Clamp(i, 0, 3)],
                 },
                 new Row
                 {

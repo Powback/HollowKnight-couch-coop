@@ -30,6 +30,32 @@ namespace HKCouchCoop
         /// <summary>Drop smoothing state so the next frame snaps rather than sweeps.</summary>
         internal static void Reset() => _hasSmoothed = false;
 
+        /// <summary>Orthographic size needed to frame these Knights, with margin.</summary>
+        internal static float RequiredSize(List<HeroController> heroes, Camera cam)
+        {
+            var b = Enclose(heroes);
+            var margin = Plugin.Cfg.ZoomMargin.Value;
+            var halfH = (b.size.y * 0.5f) + margin;
+            var halfW = ((b.size.x * 0.5f) + margin) / Mathf.Max(cam.aspect, 0.01f);
+            return Mathf.Max(halfH, halfW, _baseSize);
+        }
+
+        /// <summary>
+        /// The furthest this camera may zoom: the configured factor, ceilinged
+        /// by what the ROOM can show — "Stage" mode zooms until the whole
+        /// scene fits and no further.
+        /// </summary>
+        internal static float MaxAllowedSize(Camera cam)
+        {
+            var byFactor = _baseSize * Plugin.Cfg.MaxZoomFactor.Value;
+            var gm = GameManager.instance;
+            if (gm == null || _baseSize <= 0f) return byFactor;
+            var sceneFit = Mathf.Max(
+                gm.sceneHeight * 0.5f,
+                gm.sceneWidth * 0.5f / Mathf.Max(cam.aspect, 0.01f));
+            return Mathf.Min(byFactor, Mathf.Max(sceneFit, _baseSize));
+        }
+
         private static void Postfix(CameraController __instance)
         {
             var cam = __instance.cam;
@@ -98,7 +124,7 @@ namespace HKCouchCoop
             var halfW = ((bounds.size.x * 0.5f) + margin) / Mathf.Max(cam.aspect, 0.01f);
 
             var needed = Mathf.Max(halfH, halfW, _baseSize);
-            var maxSize = _baseSize * Plugin.Cfg.MaxZoomFactor.Value;
+            var maxSize = MaxAllowedSize(cam);
 
             var next = Mathf.Lerp(
                 cam.orthographicSize,

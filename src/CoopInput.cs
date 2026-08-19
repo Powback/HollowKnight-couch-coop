@@ -38,6 +38,8 @@ namespace HKCouchCoop
             "ListenForPromptContinue",
         };
 
+        private static readonly HashSet<System.Type> MenuTypes = new HashSet<System.Type>();
+
         private static readonly Dictionary<System.Type, FieldInfo> HandlerFields =
             new Dictionary<System.Type, FieldInfo>();
 
@@ -62,11 +64,11 @@ namespace HKCouchCoop
             {
                 if (type.Namespace != "HutongGames.PlayMaker.Actions") continue;
                 if (!type.Name.StartsWith("ListenFor")) continue;
-                if (MenuActions.Contains(type.Name)) continue;
 
                 var field = type.GetField("inputHandler", any);
                 if (field == null) continue;
                 HandlerFields[type] = field;
+                if (MenuActions.Contains(type.Name)) MenuTypes.Add(type);
 
                 // Swap before every place a poll can happen. Declared-only:
                 // inherited FsmStateAction virtuals would duplicate targets.
@@ -109,6 +111,19 @@ namespace HKCouchCoop
             if (!CoopManager.Active) return;
             if (!HandlerFields.TryGetValue(action.GetType(), out var field)) return;
 
+            // Menu-class listeners: player one's — EXCEPT while an extra's own
+            // modal (their NPC dialogue, their prompt) is live, when the modal
+            // answers to whoever opened it.
+            if (MenuTypes.Contains(action.GetType()))
+            {
+                var owner = CoopManager.DialogueOwner();
+                var handler = owner != null
+                    ? Reflect.GetInputHandler(owner)
+                    : (GameManager.instance != null ? GameManager.instance.inputHandler : null);
+                if (handler != null) field.SetValue(action, handler);
+                return;
+            }
+
             var fsm = (action as HutongGames.PlayMaker.FsmStateAction)?.Fsm;
             var box = Cache.GetValue(action, _ => new Resolution { RosterVersion = -1 });
 
@@ -147,5 +162,31 @@ namespace HKCouchCoop
         // state can never fire on the wrong player's input.
         private static void Prefix(object __instance)
             => Guard.Run(() => CoopInput.Retarget(__instance), "ListenFor retarget");
+    }
+}
+
+namespace HKCouchCoop
+{
+    /// <summary>
+    /// The C# half of modal input: Platform.GetMenuAction reads a HeroActions
+    /// passed BY PARAMETER — substitute the dialogue owner's set for the
+    /// duration of their modal so continue/submit answers the Knight talking.
+    /// </summary>
+    [HarmonyLib.HarmonyPatch(typeof(Platform), nameof(Platform.GetMenuAction),
+        typeof(HeroActions), typeof(bool))]
+    internal static class MenuActionOwnerPatch
+    {
+        private static void Prefix(ref HeroActions ia)
+        {
+            var swap = Guard.Run(() =>
+            {
+                if (!CoopManager.Active) return null;
+                var owner = CoopManager.DialogueOwner();
+                if (owner == null) return null;
+                var handler = Reflect.GetInputHandler(owner);
+                return handler != null ? handler.inputActions : null;
+            }, "MenuAction owner");
+            if (swap != null) ia = swap;
+        }
     }
 }

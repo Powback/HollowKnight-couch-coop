@@ -58,8 +58,9 @@ namespace HKCouchCoop
                 "Removes the most recently joined player.");
             MaxPlayers = f.Bind("General", "MaxPlayers", 4,
                 "Total players including player one (2-4). Each extra player needs its own gamepad.");
-            LeashDistance = f.Bind("General", "LeashDistance", 30f,
-                "Pull an extra player back to player one past this distance in world units. 0 disables.");
+            LeashDistance = f.Bind("General", "LeashDistance", -1f,
+                "-1 = Screen mode: zoom out first, teleport stragglers only when even max zoom " +
+                "cannot frame everyone. Positive = fixed distance in world units. 0 disables.");
             IgnoreVersionCheck = f.Bind("General", "IgnoreVersionCheck", false,
                 "Load even if the game version does not match the one this build targets.");
 
@@ -96,7 +97,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.0")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.2")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";

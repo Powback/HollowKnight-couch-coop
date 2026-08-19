@@ -92,6 +92,21 @@ namespace HKCouchCoop
                 pd.health = pd.CurrentMaxHealth;
         }
 
+        /// <summary>
+        /// The extra Knight whose modal (dialogue, prompt) is live right now:
+        /// they claimed the interaction and the conversation holds them. Menu
+        /// input belongs to them for exactly that window; pausing overrides.
+        /// </summary>
+        internal static HeroController DialogueOwner()
+        {
+            var owner = FsmOwnership.InteractionOwner;
+            if (owner == null) return null;
+            if (FindExtra(owner) == null) { FsmOwnership.InteractionOwner = null; return null; }
+            if (!owner.controlReqlinquished) return null;
+            if (GameManager.instance != null && GameManager.instance.isPaused) return null;
+            return owner;
+        }
+
         internal static CoopPlayer FindExtra(HeroController hc) =>
             hc == null ? null : Extras.FirstOrDefault(e => ReferenceEquals(e.Hero, hc));
 
@@ -456,10 +471,35 @@ namespace HKCouchCoop
                 return;
             }
 
-            // Leash: an extra player who falls behind, dies into a pit, or gets
-            // left in a sealed room is pulled back rather than softlocking.
+            // Leash: pull a straggler back rather than softlocking — but zoom
+            // comes FIRST. "Screen" mode (-1) only teleports once the group
+            // cannot be framed even at maximum zoom (with hysteresis so the
+            // camera gets its chance); fixed distances remain for preference;
+            // 0 disables entirely.
             var leash = Plugin.Cfg.LeashDistance.Value;
-            if (leash <= 0f) return;
+            if (leash == 0f) return;
+
+            if (leash < 0f)
+            {
+                var cam = GameCameras.instance != null && GameCameras.instance.tk2dCam != null
+                    ? GameCameras.instance.tk2dCam.GetComponent<Camera>() : null;
+                cam = cam != null ? cam
+                    : (HeroController.instance != null ? Camera.main : null);
+                if (cam == null) return;
+
+                var heroes = AllHeroes.ToList();
+                if (heroes.Count < 2) return;
+                var needed = CoopCamera.RequiredSize(heroes, cam);
+                var allowed = CoopCamera.MaxAllowedSize(cam);
+                if (needed <= allowed * 1.15f) return;   // camera can (nearly) frame it
+
+                foreach (var e in Extras)
+                {
+                    if (e.Hero == null) continue;
+                    SnapTo(e.Hero, p1, e, $"screen leash (need {needed:F0} > {allowed:F0})");
+                }
+                return;
+            }
 
             foreach (var e in Extras)
             {
