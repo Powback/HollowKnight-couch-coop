@@ -33,11 +33,12 @@ namespace HKCouchCoop
         /// <summary>Orthographic size needed to frame these Knights, with margin.</summary>
         internal static float RequiredSize(List<HeroController> heroes, Camera cam)
         {
+            var baseSize = _baseSize > 0f ? _baseSize : cam.orthographicSize;
             var b = Enclose(heroes);
             var margin = Plugin.Cfg.ZoomMargin.Value;
             var halfH = (b.size.y * 0.5f) + margin;
             var halfW = ((b.size.x * 0.5f) + margin) / Mathf.Max(cam.aspect, 0.01f);
-            return Mathf.Max(halfH, halfW, _baseSize);
+            return Mathf.Max(halfH, halfW, baseSize);
         }
 
         /// <summary>
@@ -47,9 +48,10 @@ namespace HKCouchCoop
         /// </summary>
         internal static float MaxAllowedSize(Camera cam)
         {
-            var byFactor = _baseSize * Plugin.Cfg.MaxZoomFactor.Value;
+            var baseSize = _baseSize > 0f ? _baseSize : cam.orthographicSize;
+            var byFactor = baseSize * Plugin.Cfg.MaxZoomFactor.Value;
             var gm = GameManager.instance;
-            if (gm == null || _baseSize <= 0f) return byFactor;
+            if (gm == null) return byFactor;
             var sceneFit = Mathf.Max(
                 gm.sceneHeight * 0.5f,
                 gm.sceneWidth * 0.5f / Mathf.Max(cam.aspect, 0.01f));
@@ -74,6 +76,12 @@ namespace HKCouchCoop
                 return;
             }
 
+            // Base size must be known before ANY early return: the leash math
+            // reads it, and a lock zone that returns first left it at -1 —
+            // which made "max allowed zoom" negative and teleported player two
+            // onto player one every frame of a boss fight.
+            if (_baseSize < 0f) _baseSize = cam.orthographicSize;
+
             // A lock zone means the game is deliberately constraining the view.
             if (__instance.lockZoneList != null && __instance.lockZoneList.Count > 0)
             {
@@ -83,8 +91,6 @@ namespace HKCouchCoop
 
             var heroes = CoopManager.AllHeroes.ToList();
             if (heroes.Count < 2) return;
-
-            if (_baseSize < 0f) _baseSize = cam.orthographicSize;
 
             var bounds = Enclose(heroes);
 

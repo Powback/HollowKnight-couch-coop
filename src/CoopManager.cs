@@ -489,8 +489,15 @@ namespace HKCouchCoop
 
                 var heroes = AllHeroes.ToList();
                 if (heroes.Count < 2) return;
+
+                // Inside a camera lock zone the co-op camera stands down — the
+                // leash must too, or a boss arena becomes a teleport storm.
+                var cc = GameCameras.instance != null ? GameCameras.instance.cameraController : null;
+                if (cc != null && cc.lockZoneList != null && cc.lockZoneList.Count > 0) return;
+
                 var needed = CoopCamera.RequiredSize(heroes, cam);
                 var allowed = CoopCamera.MaxAllowedSize(cam);
+                if (allowed <= 0f) return;               // uninitialized — never snap on nonsense
                 if (needed <= allowed * 1.15f) return;   // camera can (nearly) frame it
 
                 foreach (var e in Extras)
