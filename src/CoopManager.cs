@@ -161,6 +161,7 @@ namespace HKCouchCoop
             }
 
             Reflect.SetInputHandler(hero, input.Handler);
+            ApplyWorldIgnores(hero);
 
             var pd = PlayerData.instance;
             CoopInput.RosterVersion++;
@@ -191,6 +192,7 @@ namespace HKCouchCoop
             var pd = PlayerData.instance;
             CoopInput.RosterVersion++;
             player.Hero = hero;
+            ApplyWorldIgnores(hero);
             player.Downed = false;
             var pct = Mathf.Clamp(Plugin.Cfg.ReviveHealthPercent.Value, 10, 100) / 100f;
             player.Health = pd != null ? Mathf.Max(1, Mathf.CeilToInt(pd.CurrentMaxHealth * pct)) : 3;
@@ -386,6 +388,24 @@ namespace HKCouchCoop
             }
         }
 
+        /// <summary>
+        /// Objects marked IgnoreHeroCollision only ignore the singleton's
+        /// colliders — extras would still bump into props player one walks
+        /// through. Extend every such object's ignore set to this Knight.
+        /// </summary>
+        internal static void ApplyWorldIgnores(HeroController hero)
+        {
+            if (hero == null) return;
+            var heroCols = hero.GetComponents<Collider2D>();
+            foreach (var ihc in Object.FindObjectsOfType<IgnoreHeroCollision>())
+            {
+                var col = ihc.GetComponent<Collider2D>();
+                if (col == null) continue;
+                foreach (var hc in heroCols)
+                    Physics2D.IgnoreCollision(col, hc, ignore: true);
+            }
+        }
+
         internal static void GatherToP1(string reason)
         {
             var p1 = HeroController.instance;
@@ -396,6 +416,7 @@ namespace HKCouchCoop
                 if (e.Hero != null)
                 {
                     SnapTo(e.Hero, p1, e, reason);
+                    ApplyWorldIgnores(e.Hero);   // new room, new ignore set
                 }
                 else if (e.Downed)
                 {

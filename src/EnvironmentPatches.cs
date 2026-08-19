@@ -102,6 +102,36 @@ namespace HKCouchCoop
         { __state?.Restore(); return __exception; }
     }
 
+    /// <summary>
+    /// HeroBox routes incoming damage through a HeroController cached at
+    /// Awake from the singleton — which is deliberately null during clone
+    /// instantiation (the spawn masquerade), and would be player one at any
+    /// other time. Either way an extra's contact damage goes to the wrong
+    /// body. The box's hero is its parent; resolve it that way for everyone
+    /// (identical result for player one).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class HeroBoxRoutePatch
+    {
+        private static readonly FieldInfo HeroField = AccessTools.Field(typeof(HeroBox), "heroCtrl");
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            foreach (var name in new[] { "Awake", "OnEnable", "Start" })
+            {
+                var m = AccessTools.Method(typeof(HeroBox), name);
+                if (m != null) yield return m;
+            }
+        }
+
+        private static void Postfix(HeroBox __instance)
+        {
+            if (HeroField == null) return;
+            var own = __instance.GetComponentInParent<HeroController>();
+            if (own != null) HeroField.SetValue(__instance, own);
+        }
+    }
+
     /// <summary>Sight-gated enemies see whoever is nearest, not only player one.</summary>
     [HarmonyPatch(typeof(LineOfSightDetector), "Update")]
     internal static class LineOfSightPatch
