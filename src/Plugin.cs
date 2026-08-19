@@ -18,6 +18,8 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<int> MaxPlayers;
         internal readonly ConfigEntry<float> LeashDistance;
         internal readonly ConfigEntry<bool> IgnoreVersionCheck;
+        internal readonly ConfigEntry<bool> DebugServer;
+        internal readonly ConfigEntry<int> DebugServerPort;
 
         internal readonly ConfigEntry<int> ReviveHealthPercent;
         internal readonly ConfigEntry<float> LeaveHoldSeconds;
@@ -57,6 +59,18 @@ namespace HKCouchCoop
             IgnoreVersionCheck = f.Bind("General", "IgnoreVersionCheck", false,
                 "Load even if the game version does not match the one this build targets.");
 
+            // Off by default, and deliberately not in the in-game menu: this is
+            // a testing tool that exposes and can drive game state. Enabling it
+            // has to be a decision someone makes on purpose. The e2e harness
+            // sets HKCC_DEBUG_PORT for one run instead of touching this.
+            DebugServer = f.Bind("Debug", "DebugServer", false,
+                "Serve live co-op state as JSON on 127.0.0.1 for automated testing, and " +
+                "accept commands that spawn/remove players. Loopback only, never the network. " +
+                "Leave this off for normal play. The e2e harness enables it per-run with the " +
+                "HKCC_DEBUG_PORT environment variable, which overrides this setting.");
+            DebugServerPort = f.Bind("Debug", "DebugServerPort", 27600,
+                "Loopback port for the debug state channel when DebugServer is on.");
+
             ReviveHealthPercent = f.Bind("General", "ReviveHealthPercent", 50,
                 "Masks a revived player comes back with, as a percent of max health (10-100).");
             LeaveHoldSeconds = f.Bind("General", "LeaveHoldSeconds", 1.2f,
@@ -78,7 +92,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.8")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.9")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -87,6 +101,12 @@ namespace HKCouchCoop
         private const string TargetGameVersion = "1.5.12620";
 
         internal static Plugin Instance;
+
+        /// <summary>The version in the BepInPlugin attribute, read back at runtime
+        /// rather than duplicated in a constant — a second copy of a version number
+        /// is a second thing to forget to bump.</summary>
+        internal static string Version =>
+            Instance != null ? Instance.Info.Metadata.Version.ToString() : "unknown";
         internal static ManualLogSource Log;
         internal static Config Cfg;
 
@@ -116,6 +136,7 @@ namespace HKCouchCoop
             Harness.PatchAllIsolated(_harmony, typeof(Plugin).Assembly, m => Log.LogError(m));
 
             CoopManager.Init();
+            DebugState.Init();
             _enabled = true;
 
             Log.LogInfo(Cfg.JoinWithStart.Value
@@ -158,6 +179,7 @@ namespace HKCouchCoop
             }
 
             StartJoin.Tick();
+            DebugState.Tick();
             CoopManager.Tick();
             NativeHud.Tick();
             CoopHealthHud.Tick();
@@ -166,6 +188,7 @@ namespace HKCouchCoop
         private void OnDestroy()
         {
             if (!_enabled) return;
+            DebugState.Shutdown();
             CoopManager.Shutdown();
             _harmony?.UnpatchSelf();
         }

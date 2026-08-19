@@ -104,12 +104,14 @@ namespace HKCouchCoop
         {
             USceneManager.activeSceneChanged += OnSceneChanged;
             InputManager.OnDeviceDetached += OnDeviceDetached;
+            InputManager.OnDeviceAttached += OnDeviceAttached;
         }
 
         internal static void Shutdown()
         {
             USceneManager.activeSceneChanged -= OnSceneChanged;
             InputManager.OnDeviceDetached -= OnDeviceDetached;
+            InputManager.OnDeviceAttached -= OnDeviceAttached;
             DespawnAll();
         }
 
@@ -468,14 +470,59 @@ namespace HKCouchCoop
         {
             var p1 = P1Actions;
             if (p1 == null || device == null) return;
+
+            if (Plugin.Cfg.PlayerOnePadIndex.Value < 0)
+            {
+                // Player one is DECLARED keyboard-only: while anyone is joined,
+                // player one needs no pad at all — so exclude every attached
+                // device. This is what defeats Steam Input's device twins (the
+                // physical pad appears as both a raw device and a virtual
+                // "Xbox Controller"; excluding only the joined twin leaves the
+                // other one driving player one). Start-join still works: it
+                // polls devices directly, never player one's action set.
+                foreach (var d in InputManager.Devices)
+                {
+                    if (d == null || !d.IsAttached) continue;
+                    if (!p1.ExcludeDevices.Contains(d)) p1.ExcludeDevices.Add(d);
+                    if (!ExcludedFromP1.Contains(d)) ExcludedFromP1.Add(d);
+                }
+                return;
+            }
+
             if (!p1.ExcludeDevices.Contains(device)) p1.ExcludeDevices.Add(device);
             ExcludedFromP1.Add(device);
         }
 
         private static void RestoreToP1(InputDevice device)
         {
+            // Keyboard-declared player one: exclusions clear only when the last
+            // extra leaves (any earlier and a duplicate twin would leak back).
+            if (Plugin.Cfg.PlayerOnePadIndex.Value < 0)
+            {
+                if (Extras.Count == 0)
+                {
+                    var p1 = P1Actions;
+                    if (p1 != null)
+                        foreach (var d in ExcludedFromP1) p1.ExcludeDevices.Remove(d);
+                    ExcludedFromP1.Clear();
+                }
+                return;
+            }
+
             P1Actions?.ExcludeDevices.Remove(device);
             ExcludedFromP1.Remove(device);
+        }
+
+        /// <summary>A pad plugged in mid-session: keyboard-declared player one
+        /// ignores it too (it may be a twin, or player three's — either way
+        /// Start-join reads the device directly).</summary>
+        private static void OnDeviceAttached(InputDevice device)
+        {
+            if (!Active || Plugin.Cfg.PlayerOnePadIndex.Value >= 0) return;
+            var p1 = P1Actions;
+            if (p1 == null || device == null) return;
+            if (!p1.ExcludeDevices.Contains(device)) p1.ExcludeDevices.Add(device);
+            if (!ExcludedFromP1.Contains(device)) ExcludedFromP1.Add(device);
         }
     }
 }
