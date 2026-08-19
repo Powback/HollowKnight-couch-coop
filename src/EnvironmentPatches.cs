@@ -134,6 +134,26 @@ namespace HKCouchCoop
         }, "HeroBox route");
     }
 
+    /// <summary>
+    /// Geo caches its collecting hero at spawn; geo spawned during a clone's
+    /// kill caches the clone, and collecting it after that player left would
+    /// NRE inside vanilla code (lost geo + console spam). Re-point a dead
+    /// cached hero at the singleton before the trigger runs.
+    /// </summary>
+    [HarmonyPatch(typeof(GeoControl), "OnTriggerEnter2D")]
+    internal static class GeoSafetyPatch
+    {
+        private static readonly FieldInfo HeroField = AccessTools.Field(typeof(GeoControl), "hero");
+
+        private static void Prefix(GeoControl __instance) => Guard.Run(() =>
+        {
+            if (HeroField == null) return;
+            var hero = HeroField.GetValue(__instance) as HeroController;
+            if (hero == null && HeroController.instance != null)
+                HeroField.SetValue(__instance, HeroController.instance);
+        }, "Geo safety");
+    }
+
     /// <summary>Sight-gated enemies see whoever is nearest, not only player one.</summary>
     [HarmonyPatch(typeof(LineOfSightDetector), "Update")]
     internal static class LineOfSightPatch

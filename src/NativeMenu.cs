@@ -180,6 +180,10 @@ namespace HKCouchCoop
             }
             var baseY = siblings.Count > 0 ? siblings.Min() : template.transform.localPosition.y;
 
+            // Our rows sit tighter than vanilla's so twelve fit beneath the
+            // screen's own entries without scrolling.
+            spacing *= 0.85f;
+
             var created = new List<MenuOptionHorizontal>();
             var index = 0;
             foreach (var row in BuildRows())
