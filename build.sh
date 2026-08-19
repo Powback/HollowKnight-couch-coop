@@ -27,7 +27,9 @@ echo "==> Building"
 if command -v dotnet >/dev/null 2>&1; then
   dotnet build src/HKCouchCoop.csproj -c Release -o dist
 else
-  podman run --rm -v "$PWD":/w:z -w /w mcr.microsoft.com/dotnet/sdk:9.0 \
+  # CoopKit is a sibling checkout (../CoopModKit) — mount both repos.
+  podman run --rm -v "$PWD":/w/HollowKnightMPMod:z -v "$PWD/../CoopModKit":/w/CoopModKit:z \
+    -w /w/HollowKnightMPMod mcr.microsoft.com/dotnet/sdk:9.0 \
     dotnet build src/HKCouchCoop.csproj -c Release -o dist
 fi
 
@@ -39,7 +41,7 @@ if [ "${1:-}" = "--install" ]; then
     exit 1
   fi
   mkdir -p "$PLUGINS"
-  cp dist/HKCouchCoop.dll "$PLUGINS/"
+  cp dist/HKCouchCoop.dll dist/CoopKit.dll "$PLUGINS/"
   echo "==> Installed to $PLUGINS/HKCouchCoop.dll"
 fi
 

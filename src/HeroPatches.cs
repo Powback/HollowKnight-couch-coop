@@ -1,4 +1,5 @@
 using System;
+using CoopKit;
 using HarmonyLib;
 
 namespace HKCouchCoop
@@ -19,18 +20,16 @@ namespace HKCouchCoop
     [HarmonyPatch(typeof(HeroController), nameof(HeroController.SceneInit))]
     internal static class SceneInitPatch
     {
-        private static void Prefix(HeroController __instance, out HeroController __state)
+        private static void Prefix(HeroController __instance, out Masquerade<HeroController>.Scope __state)
         {
-            __state = null;
-            if (!CoopManager.IsExtra(__instance)) return;
-
-            __state = Reflect.HeroInstance;
-            Reflect.HeroInstance = __instance;
+            __state = CoopManager.IsExtra(__instance)
+                ? Reflect.HeroMasq.Impersonate(__instance)
+                : null;
         }
 
-        private static Exception Finalizer(Exception __exception, HeroController __state)
+        private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         {
-            if (__state != null) Reflect.HeroInstance = __state;
+            __state?.Restore();
             return __exception;   // never swallow the original error
         }
     }

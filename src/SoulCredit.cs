@@ -1,4 +1,5 @@
 using System;
+using CoopKit;
 using HarmonyLib;
 
 namespace HKCouchCoop
@@ -18,7 +19,7 @@ namespace HKCouchCoop
     [HarmonyPatch(typeof(HealthManager), "Hit")]
     internal static class SoulCredit
     {
-        private static void Prefix(HitInstance hitInstance, out HeroController __state)
+        private static void Prefix(HitInstance hitInstance, out Masquerade<HeroController>.Scope __state)
         {
             __state = null;
             if (!CoopManager.Active || hitInstance.Source == null) return;
@@ -26,13 +27,12 @@ namespace HKCouchCoop
             var attacker = hitInstance.Source.GetComponentInParent<HeroController>();
             if (attacker == null || !CoopManager.IsExtra(attacker)) return;
 
-            __state = Reflect.HeroInstance;
-            Reflect.HeroInstance = attacker;
+            __state = Reflect.HeroMasq.Impersonate(attacker);
         }
 
-        private static Exception Finalizer(Exception __exception, HeroController __state)
+        private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         {
-            if (__state != null) Reflect.HeroInstance = __state;
+            __state?.Restore();
             return __exception;
         }
     }

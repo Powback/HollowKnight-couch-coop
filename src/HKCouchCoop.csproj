@@ -19,6 +19,9 @@
   <ItemGroup>
     <PackageReference Include="BepInEx.Core" Version="5.4.21" />
     <PackageReference Include="HarmonyX" Version="2.10.1" />
+    <!-- Sibling checkout: ~/Projects/CoopModKit next to this repo. CoopKit.dll
+         ships alongside the plugin DLL. -->
+    <ProjectReference Include="../../CoopModKit/src/CoopKit/CoopKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

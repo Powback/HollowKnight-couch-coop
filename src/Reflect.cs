@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using CoopKit;
 using HarmonyLib;
 
 namespace HKCouchCoop
@@ -55,23 +56,10 @@ namespace HKCouchCoop
         }
 
         /// <summary>
-        /// Runs <paramref name="action"/> with the singleton temporarily pointed at
-        /// <paramref name="hero"/>, then restores it. This is how we let player two
-        /// through vanilla code paths that early-out on `this != _instance`
-        /// without rewriting their IL.
+        /// Kit masquerade over the singleton backing field: patches store the
+        /// scope in Harmony __state and restore it from a Finalizer.
         /// </summary>
-        internal static void AsInstance(HeroController hero, Action action)
-        {
-            var saved = HeroInstance;
-            try
-            {
-                HeroInstance = hero;
-                action();
-            }
-            finally
-            {
-                HeroInstance = saved;
-            }
-        }
+        internal static readonly Masquerade<HeroController> HeroMasq =
+            new Masquerade<HeroController>(() => HeroInstance, v => HeroInstance = v);
     }
 }

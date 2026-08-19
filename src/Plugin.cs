@@ -1,6 +1,7 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using CoopKit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -67,7 +68,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.4.3")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.5.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -97,36 +98,12 @@ namespace HKCouchCoop
                 return;
             }
 
-            var version = Application.version;
-            if (version != TargetGameVersion)
-            {
-                if (!Cfg.IgnoreVersionCheck.Value)
-                {
-                    Log.LogError(
-                        $"This build targets Hollow Knight {TargetGameVersion} but the game reports " +
-                        $"'{version}'. Refusing to load to avoid corrupting your save. " +
-                        "Set IgnoreVersionCheck=true in the config to try anyway.");
-                    return;
-                }
-                Log.LogWarning($"Game version '{version}' != target '{TargetGameVersion}'; loading anyway.");
-            }
+            if (!Harness.VersionGate(Application.version, TargetGameVersion,
+                    Cfg.IgnoreVersionCheck.Value, m => Log.LogError(m), m => Log.LogWarning(m)))
+                return;
 
             _harmony = new Harmony(Guid);
-
-            // Patch class by class. A single unresolvable target after a game
-            // update should cost that one feature, not the whole mod.
-            foreach (var type in typeof(Plugin).Assembly.GetTypes())
-            {
-                if (type.GetCustomAttributes(typeof(HarmonyPatch), inherit: true).Length == 0) continue;
-                try
-                {
-                    _harmony.CreateClassProcessor(type).Patch();
-                }
-                catch (System.Exception e)
-                {
-                    Log.LogError($"Patch '{type.Name}' failed, continuing without it: {e.Message}");
-                }
-            }
+            Harness.PatchAllIsolated(_harmony, typeof(Plugin).Assembly, m => Log.LogError(m));
 
             CoopManager.Init();
             _enabled = true;
@@ -136,7 +113,8 @@ namespace HKCouchCoop
                 : $"Ready. Press {Cfg.JoinKey.Value} to add a player, {Cfg.LeaveKey.Value} to remove one.");
         }
 
-        private float _lastUpdateError;
+        private readonly ThrottledLog _updateErrors =
+            new ThrottledLog(10, m => Log.LogError(m));
 
         private void Update()
         {
@@ -144,12 +122,7 @@ namespace HKCouchCoop
             try { UpdateCore(); }
             catch (System.Exception e)
             {
-                // A single bad frame must not become 60 log lines per second.
-                if (Time.unscaledTime - _lastUpdateError > 10f)
-                {
-                    _lastUpdateError = Time.unscaledTime;
-                    Log.LogError($"Update loop error (throttled): {e}");
-                }
+                _updateErrors.Log(Time.unscaledTimeAsDouble, $"Update loop error (throttled): {e}");
             }
         }
 

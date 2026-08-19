@@ -1,73 +1,37 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using CoopKit;
 using HarmonyLib;
 
 namespace HKCouchCoop
 {
     /// <summary>
-    /// Independent health for extra players.
-    ///
-    /// All of the game's health logic — damage math, Joni's Blessing, Fragile
-    /// Heart, lifeblood masks, the death check — runs inside HeroController
-    /// *instance* methods and reads/writes `playerData.health`/`healthBlue`.
-    /// Rather than reimplementing any of it, each extra Knight carries a
-    /// private pool, and for the duration of that Knight's own health-touching
-    /// calls the shared PlayerData fields are swapped to its pool and back.
-    /// Vanilla code computes against the right numbers without knowing.
-    ///
-    /// The swap is restored in a Finalizer so an exception inside vanilla code
-    /// can never leave player one wearing a clone's health.
+    /// Independent health and soul for extra players, built on the kit's
+    /// scoped pool swap: for the duration of a Knight's own state-touching
+    /// calls, the shared PlayerData fields hold that Knight's pools, and what
+    /// vanilla computed (damage math, Joni's Blessing, lifeblood, the focus
+    /// gate — all of it) is written back to the pools afterwards. Restored in
+    /// a Finalizer so an exception can never leave player one wearing a
+    /// clone's numbers.
     /// </summary>
     internal static class HealthPool
     {
-        internal sealed class Swap
-        {
-            internal int P1Health;
-            internal int P1Blue;
-            internal int P1Soul;
-            internal int P1Reserve;
-            internal CoopPlayer Player;
-        }
+        private static readonly PoolSwap<CoopPlayer> Swap = new PoolSwap<CoopPlayer>()
+            .Add(() => PlayerData.instance.health,     v => PlayerData.instance.health = v,
+                 p => p.Health,      (p, v) => p.Health = v)
+            .Add(() => PlayerData.instance.healthBlue, v => PlayerData.instance.healthBlue = v,
+                 p => p.HealthBlue,  (p, v) => p.HealthBlue = v)
+            .Add(() => PlayerData.instance.MPCharge,   v => PlayerData.instance.MPCharge = v,
+                 p => p.Soul,        (p, v) => p.Soul = v)
+            .Add(() => PlayerData.instance.MPReserve,  v => PlayerData.instance.MPReserve = v,
+                 p => p.SoulReserve, (p, v) => p.SoulReserve = v);
 
-        internal static Swap Begin(HeroController hc)
+        internal static PoolSwap<CoopPlayer>.Scope Begin(HeroController hc)
         {
             if (!Plugin.Cfg.IndependentHealth.Value) return null;
-
-            var player = CoopManager.FindExtra(hc);
-            if (player == null) return null;
-
-            var pd = PlayerData.instance;
-            if (pd == null) return null;
-
-            var swap = new Swap
-            {
-                P1Health = pd.health, P1Blue = pd.healthBlue,
-                P1Soul = pd.MPCharge, P1Reserve = pd.MPReserve,
-                Player = player,
-            };
-            pd.health = player.Health;
-            pd.healthBlue = player.HealthBlue;
-            pd.MPCharge = player.Soul;
-            pd.MPReserve = player.SoulReserve;
-            return swap;
-        }
-
-        internal static void End(Swap swap)
-        {
-            if (swap == null) return;
-            var pd = PlayerData.instance;
-            if (pd == null) return;
-
-            // Keep what vanilla computed for the clone, give player one back theirs.
-            swap.Player.Health = pd.health;
-            swap.Player.HealthBlue = pd.healthBlue;
-            swap.Player.Soul = pd.MPCharge;
-            swap.Player.SoulReserve = pd.MPReserve;
-            pd.health = swap.P1Health;
-            pd.healthBlue = swap.P1Blue;
-            pd.MPCharge = swap.P1Soul;
-            pd.MPReserve = swap.P1Reserve;
+            if (PlayerData.instance == null) return null;
+            return Swap.Begin(CoopManager.FindExtra(hc));
         }
     }
 
@@ -93,12 +57,12 @@ namespace HKCouchCoop
             }
         }
 
-        private static void Prefix(HeroController __instance, out object __state)
+        private static void Prefix(HeroController __instance, out PoolSwap<CoopPlayer>.Scope __state)
             => __state = HealthPool.Begin(__instance);
 
-        private static Exception Finalizer(Exception __exception, object __state)
+        private static Exception Finalizer(Exception __exception, PoolSwap<CoopPlayer>.Scope __state)
         {
-            HealthPool.End(__state as HealthPool.Swap);
+            __state?.End();
             return __exception;
         }
     }
