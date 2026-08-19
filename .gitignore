@@ -1,0 +1,9 @@
+# Game assemblies — NEVER commit these. Users build against their own copy.
+refs/
+decomp/
+
+# Build output
+bin/
+obj/
+dist/
+*.user

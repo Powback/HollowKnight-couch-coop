@@ -1,0 +1,30 @@
+[Message:   BepInEx] Chainloader ready
+[Message:   BepInEx] Chainloader started
+[Info   :   BepInEx] 1 plugin to load
+[Info   :   BepInEx] Loading [Hollow Knight Couch Co-op 0.3.1]
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForAttack and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForBackdash and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForDash and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForDreamNail and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForJump and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForLeft and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForQuickCast and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForQuickMap and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRight and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRsDown and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRsUp and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForSuperdash and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForAttack and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForBackdash and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForDash and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForDreamNail and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForJump and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForLeft and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForQuickCast and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForQuickMap and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRight and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRsDown and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForRsUp and name CheckForInput and parameters 
+[Warning:  HarmonyX] AccessTools.Method: Could not find method for type HutongGames.PlayMaker.Actions.ListenForSuperdash and name CheckForInput and parameters 
+[Info   :Hollow Knight Couch Co-op] Ready. Press F6 to add a player, F7 to remove one.
+[Message:   BepInEx] Chainloader startup complete
