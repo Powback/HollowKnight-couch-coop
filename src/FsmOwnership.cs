@@ -35,6 +35,7 @@ namespace HKCouchCoop
         private static readonly ConditionalWeakTable<Fsm, OwnerBox> WorldTrigger =
             new ConditionalWeakTable<Fsm, OwnerBox>();
 
+        /// <summary>Claim (extra) or clear (null / player one) a world FSM.</summary>
         internal static void ClaimWorldFsm(Fsm fsm, HeroController hero)
         {
             if (fsm == null) return;

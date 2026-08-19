@@ -121,22 +121,20 @@ namespace HKCouchCoop
             if (box.Handler == null) return;
             field.SetValue(action, box.Handler);
 
-            // Interaction ownership: a world FSM (no hero parent) whose resolved
-            // Knight is an extra pressing an interaction button right now gets
-            // claimed for that Knight — its whole sequence (seating, dialogue)
-            // then executes as them via FsmOwnership.
-            var hero = box.Handler.GetComponentInParent<HeroController>();
-            if (hero == null)
-            {
-                // Extra handlers live on inactive carrier objects; map back.
-                hero = CoopManager.HeroForHandler(box.Handler);
-            }
-            if (hero == null || !CoopManager.IsExtra(hero)) return;
+            // Interaction ownership: every interaction press on a world FSM
+            // (no hero parent) reassigns its claim to the presser — an extra
+            // claims it (its whole sequence executes as them); player one
+            // pressing CLEARS any stale claim, or a bench once used by a
+            // friend would seat the friend when player one sits down later.
             if (fsm?.GameObject == null || fsm.GameObject.GetComponentInParent<HeroController>() != null) return;
 
             var a = box.Handler.inputActions;
-            if (a != null && (a.up.WasPressed || a.down.WasPressed || a.cast.WasPressed || a.attack.WasPressed))
-                FsmOwnership.ClaimWorldFsm(fsm, hero);
+            if (a == null) return;
+            if (!(a.up.WasPressed || a.down.WasPressed || a.cast.WasPressed || a.attack.WasPressed)) return;
+
+            var hero = box.Handler.GetComponentInParent<HeroController>()
+                       ?? CoopManager.HeroForHandler(box.Handler);   // carriers are inactive
+            FsmOwnership.ClaimWorldFsm(fsm, hero != null && CoopManager.IsExtra(hero) ? hero : null);
         }
     }
 

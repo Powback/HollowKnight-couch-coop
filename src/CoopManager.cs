@@ -74,7 +74,22 @@ namespace HKCouchCoop
                 if (e.Hero == null) continue;
                 e.Health = pd != null ? pd.CurrentMaxHealth : e.Health;
             }
+
+            // When the rester is an extra, this postfix runs INSIDE their pool
+            // swap — writing player one's health here would be clobbered by the
+            // swap's restore. Top player one up next frame, after finalizers.
+            if (Plugin.Instance != null)
+                Plugin.Instance.StartCoroutine(TopUpPlayerOneNextFrame());
+
             NativeHud.Notify("The party rests");
+        }
+
+        private static System.Collections.IEnumerator TopUpPlayerOneNextFrame()
+        {
+            yield return null;
+            var pd = PlayerData.instance;
+            if (pd != null && pd.health < pd.CurrentMaxHealth)
+                pd.health = pd.CurrentMaxHealth;
         }
 
         internal static CoopPlayer FindExtra(HeroController hc) =>

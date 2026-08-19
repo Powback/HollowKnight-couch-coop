@@ -78,7 +78,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.5")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.6")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
