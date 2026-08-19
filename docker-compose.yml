@@ -1,0 +1,12 @@
+# Build the mod without a host .NET SDK (CoopKit is a sibling checkout):
+#   docker compose run --rm build
+# refs/ must be populated first — see build.sh or README.
+services:
+  build:
+    image: mcr.microsoft.com/dotnet/sdk:9.0
+    working_dir: /w/HollowKnightMPMod
+    volumes:
+      - ".:/w/HollowKnightMPMod:z"
+      - "../CoopModKit:/w/CoopModKit:z"
+    environment: [ DOTNET_CLI_TELEMETRY_OPTOUT=1, DOTNET_NOLOGO=1 ]
+    command: dotnet build src/HKCouchCoop.csproj -c Release -o dist
