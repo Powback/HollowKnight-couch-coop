@@ -51,6 +51,22 @@ the contract the code implements; deviations found in play are bugs.
 | Revival shade is killed | The player's real banked shade (geo, soulLimited, scene marker) is guarded — neutralized during the death sequence, restored after, force-restored on any teardown including save-and-quit |
 | Save file safety | Backed up before first run of any death feature; version gate refuses foreign game builds |
 
+## Economy and items (the shared bank)
+
+One save = one wallet = one inventory, by design. Any Knight's touch collects
+geo; buying and selling at any shop draws from and feeds the same pool no
+matter who initiated it. Soul orbs and kill-geo credit the Knight who earned
+them (0.6.2); the Gathering Swarm fetch visual biases toward player one
+(cosmetic). Item pickups grant to the shared save regardless of collector —
+the pickup animation may play on the wrong body (polish item).
+
+**Charms are deliberately a team build, not per-player.** Charm effects are
+read from the shared save partly by scopeable instance code and partly by
+FSMs that cannot be scoped — any per-player or exclusivity setting would
+half-work invisibly (speed lost, FSM effects kept). A setting that lies is
+worse than none; the loadout is a shared resource negotiated at the bench.
+Revisit only if play shows a genuine need.
+
 ## Config surface
 
 Menu (Options → Game, native rows): health mode, fallen-players mode,
