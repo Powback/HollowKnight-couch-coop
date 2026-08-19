@@ -89,6 +89,42 @@ namespace HKCouchCoop
                 },
                 new Row
                 {
+                    Label = "Player One Pad",
+                    Options = new[] { "Keyboard", "Pad 1", "Pad 2", "Pad 3" },
+                    Get = () => Mathf.Clamp(c.PlayerOnePadIndex.Value + 1, 0, 3),
+                    Set = i => c.PlayerOnePadIndex.Value = i - 1,
+                },
+                new Row
+                {
+                    Label = "Hold To Leave",
+                    Options = new[] { "Quick", "Normal", "Long" },
+                    Get = () =>
+                    {
+                        var v = c.LeaveHoldSeconds.Value;
+                        return v < 0.9f ? 0 : v < 1.6f ? 1 : 2;
+                    },
+                    Set = i => c.LeaveHoldSeconds.Value = new[] { 0.6f, 1.2f, 2.2f }[Mathf.Clamp(i, 0, 2)],
+                },
+                new Row
+                {
+                    Label = "Cutscene Freeze",
+                    Options = new[] { "Off", "On" },
+                    Get = () => c.FreezeExtrasInCutscenes.Value ? 1 : 0,
+                    Set = i => c.FreezeExtrasInCutscenes.Value = i == 1,
+                },
+                new Row
+                {
+                    Label = "Zoom Range",
+                    Options = new[] { "Tight", "Normal", "Wide" },
+                    Get = () =>
+                    {
+                        var v = c.MaxZoomFactor.Value;
+                        return v < 1.45f ? 0 : v < 1.8f ? 1 : 2;
+                    },
+                    Set = i => c.MaxZoomFactor.Value = new[] { 1.3f, 1.6f, 2.0f }[Mathf.Clamp(i, 0, 2)],
+                },
+                new Row
+                {
                     Label = "Player Colors",
                     Options = new[] { "Off", "On" },
                     Get = () => c.PlayerTints.Value ? 1 : 0,
@@ -124,11 +160,35 @@ namespace HKCouchCoop
             if (template.transform.parent.Cast<Transform>().Any(t => t.name.StartsWith(RowPrefix)))
                 return;
 
+            // Row spacing measured from the screen's own rows: cloned rows keep
+            // the template's local position, so without a layout group they
+            // would all stack on one spot.
+            var siblings = template.transform.parent
+                .GetComponentsInChildren<MenuOptionHorizontal>(includeInactive: true)
+                .Where(o => !o.name.StartsWith(RowPrefix))
+                .Select(o => o.transform.localPosition.y)
+                .Distinct().OrderByDescending(y => y).ToList();
+            float spacing;
+            if (siblings.Count >= 2)
+            {
+                spacing = Mathf.Abs(siblings[0] - siblings[1]);
+            }
+            else
+            {
+                var rt = template.GetComponent<RectTransform>();
+                spacing = rt != null ? rt.rect.height * 1.15f : 60f;
+            }
+            var baseY = siblings.Count > 0 ? siblings.Min() : template.transform.localPosition.y;
+
             var created = new List<MenuOptionHorizontal>();
+            var index = 0;
             foreach (var row in BuildRows())
             {
                 var clone = CloneRow(template, row);
-                if (clone != null) created.Add(clone);
+                if (clone == null) continue;
+                var lp = template.transform.localPosition;
+                clone.transform.localPosition = new Vector3(lp.x, baseY - spacing * (++index), lp.z);
+                created.Add(clone);
             }
 
             if (created.Count > 0) Register(screen, created);

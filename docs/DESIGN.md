@@ -69,10 +69,12 @@ Revisit only if play shows a genuine need.
 
 ## Config surface
 
-Menu (Options → Game, native rows): health mode, fallen-players mode,
-join-with-Start, max players, leash, revive masks, player colors, group zoom.
-Config file additionally: keys, pad index, hold-to-leave seconds, cutscene
-freeze, zoom tuning, version-gate override.
+Menu (Options → Game, 12 native rows): health mode, fallen players,
+join-with-Start, max players, leash, revive masks, player one's pad,
+hold-to-leave, cutscene freeze, zoom range, player colors, group zoom.
+Config file additionally: keyboard keys, exact zoom margins/speeds, and the
+version-gate override — numbers that make bad option rows. Correctness fixes
+(damage routing, recoil attribution, soul credit) have no toggle on purpose.
 
 **Presets**: defaults = casual couch (per-player health, shade revival, half-
 mask revives). Hardcore = Shared Pool (any death is the team's). Kids/chaos =
