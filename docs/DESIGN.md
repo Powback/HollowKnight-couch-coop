@@ -64,11 +64,12 @@ Revive Masks: Full, Leash: Short.
 
 ## Known quirks (deliberately deferred, not forgotten)
 
-- Benches: a bench answers the nearest Knight's Up press, but the seating
-  sequence targets player one — an extra using a bench may seat player one.
-  Fix needs play data on the bench FSM; workaround: player one sits.
+- Benches: one seat per bench (single seating state machine) — but ANY Knight
+  can be the sitter (interaction ownership routes the whole sequence to
+  whoever pressed Up), and a rest refills the whole party's pools.
 - Lifeblood charms grant blue masks to player one only.
 - Extras have no soul orb display yet (pools work; UI needs the HUD dump from
   a play session).
-- A dozen minor prompt types still read player one's input (tutorial-grade).
+- (fixed in 0.6.1) ability listeners — quick cast, superdash, dream nail —
+  now answer to their own Knight; previously they read player one's buttons.
 - The shade fight may drift outside a camera lock zone's view.

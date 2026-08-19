@@ -28,9 +28,31 @@ namespace HKCouchCoop
         private static readonly ConditionalWeakTable<Fsm, OwnerBox> Cache =
             new ConditionalWeakTable<Fsm, OwnerBox>();
 
+        // Interaction ownership: a WORLD FSM (bench, NPC, lever) triggered by
+        // an extra Knight's press executes as that Knight until someone else
+        // triggers it — so a bench seats the player who sat on it, not player
+        // one from across the room.
+        private static readonly ConditionalWeakTable<Fsm, OwnerBox> WorldTrigger =
+            new ConditionalWeakTable<Fsm, OwnerBox>();
+
+        internal static void ClaimWorldFsm(Fsm fsm, HeroController hero)
+        {
+            if (fsm == null) return;
+            WorldTrigger.GetValue(fsm, _ => new OwnerBox()).Hero = hero;
+        }
+
         internal static Masquerade<HeroController>.Scope BeginFor(Fsm fsm)
         {
             if (!CoopManager.Active || fsm == null) return null;
+
+            // A recent world-interaction claim outranks parentage (world FSMs
+            // have no hero parent at all).
+            if (WorldTrigger.TryGetValue(fsm, out var claim) && claim.Hero != null)
+            {
+                if (CoopManager.FindExtra(claim.Hero) != null)
+                    return Reflect.HeroMasq.Impersonate(claim.Hero);
+                claim.Hero = null;   // stale (left/downed) — fall through
+            }
 
             var box = Cache.GetValue(fsm, Resolve);
 

@@ -60,6 +60,23 @@ namespace HKCouchCoop
         internal static Color TintFor(int number) =>
             Tints[Mathf.Clamp(number - 2, 0, Tints.Length - 1)];
 
+        internal static HeroController HeroForHandler(InputHandler handler) =>
+            handler == null ? null
+                : Extras.FirstOrDefault(e => ReferenceEquals(e.Input?.Handler, handler))?.Hero;
+
+        /// <summary>A rest (bench heal) restores the whole party's pools.</summary>
+        internal static void PartyRest()
+        {
+            if (!Active || !Plugin.Cfg.IndependentHealth.Value) return;
+            var pd = PlayerData.instance;
+            foreach (var e in Extras)
+            {
+                if (e.Hero == null) continue;
+                e.Health = pd != null ? pd.CurrentMaxHealth : e.Health;
+            }
+            NativeHud.Notify("The party rests");
+        }
+
         internal static CoopPlayer FindExtra(HeroController hc) =>
             hc == null ? null : Extras.FirstOrDefault(e => ReferenceEquals(e.Hero, hc));
 
@@ -146,6 +163,7 @@ namespace HKCouchCoop
             Reflect.SetInputHandler(hero, input.Handler);
 
             var pd = PlayerData.instance;
+            CoopInput.RosterVersion++;
             Extras.Add(new CoopPlayer
             {
                 Hero = hero,
@@ -171,6 +189,7 @@ namespace HKCouchCoop
             Reflect.SetInputHandler(hero, player.Input.Handler);
 
             var pd = PlayerData.instance;
+            CoopInput.RosterVersion++;
             player.Hero = hero;
             player.Downed = false;
             var pct = Mathf.Clamp(Plugin.Cfg.ReviveHealthPercent.Value, 10, 100) / 100f;
@@ -214,6 +233,7 @@ namespace HKCouchCoop
 
         private static void Remove(CoopPlayer player)
         {
+            CoopInput.RosterVersion++;
             Extras.Remove(player);
             ShadeRevive.DestroyShade(player);
             if (player.Input?.Device != null) RestoreToP1(player.Input.Device);

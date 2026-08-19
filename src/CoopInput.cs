@@ -1,30 +1,35 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using UnityEngine;
 
 namespace HKCouchCoop
 {
     /// <summary>
-    /// Routes world-interaction input to the Knight who is actually there.
+    /// Routes every PlayMaker `ListenFor*` input poll to the right Knight.
     ///
-    /// The game's `ListenFor*` PlayMaker actions — the ones driving wells,
-    /// doors, benches, levers and NPC prompts — all resolve their input source
-    /// as `GameManager.instance.GetComponent&lt;InputHandler&gt;()`, which is
-    /// always player one. The FSM's *proximity* check and its *input* check are
-    /// therefore decoupled: an extra Knight can stand in a well while player
-    /// one, anywhere on the map, presses Up and sends everyone down it.
+    /// These actions drive two very different things through one hardwired
+    /// input source (`GameManager.instance.GetComponent&lt;InputHandler&gt;()`
+    /// — always player one):
+    ///  - world interactions (wells, doors, prompts): must answer to the
+    ///    Knight standing there;
+    ///  - the hero's own ability FSMs (Spell Control's quick cast, Superdash,
+    ///    Dream Nail): must answer to the Knight that OWNS the FSM — or player
+    ///    one's buttons fire every Knight's abilities at once while the
+    ///    extras' own buttons do nothing.
     ///
-    /// We swap each action's cached handler to the relevant Knight's before
-    /// every input poll.
+    /// Only three listener types poll via a hookable CheckForInput; the rest
+    /// poll inside OnEnter/OnUpdate — so the handler field is swapped before
+    /// all three, for every non-menu listener type. Resolution is cached per
+    /// action instance and revalidated when the roster changes.
     /// </summary>
     internal static class CoopInput
     {
         /// <summary>
-        /// Menu and UI listeners stay with player one. Redirecting these to
-        /// whichever Knight is closer would let an extra pad steer the pause
-        /// menu, inventory and dialogue panes.
+        /// Menu and UI listeners stay with player one — redirecting them would
+        /// let extra pads steer the pause menu, inventory and dialogue panes.
         /// </summary>
         private static readonly HashSet<string> MenuActions = new HashSet<string>
         {
@@ -36,70 +41,112 @@ namespace HKCouchCoop
         private static readonly Dictionary<System.Type, FieldInfo> HandlerFields =
             new Dictionary<System.Type, FieldInfo>();
 
-        internal static IEnumerable<MethodBase> ListenForCheckMethods()
+        private sealed class Resolution
         {
+            internal InputHandler Handler;
+            internal int RosterVersion;
+        }
+
+        private static readonly ConditionalWeakTable<object, Resolution> Cache =
+            new ConditionalWeakTable<object, Resolution>();
+
+        /// <summary>Bumped on join/leave so cached routes recompute.</summary>
+        internal static int RosterVersion;
+
+        internal static IEnumerable<MethodBase> ListenForPollMethods()
+        {
+            const BindingFlags any = BindingFlags.Instance
+                | BindingFlags.Public | BindingFlags.NonPublic;
+
             foreach (var type in typeof(HeroController).Assembly.GetTypes())
             {
                 if (type.Namespace != "HutongGames.PlayMaker.Actions") continue;
                 if (!type.Name.StartsWith("ListenFor")) continue;
                 if (MenuActions.Contains(type.Name)) continue;
 
-                // Only ListenForUp/Down/Cast actually have CheckForInput — the
-                // rest poll inside OnUpdate. Plain reflection rather than
-                // AccessTools: a miss here is expected, not warning-worthy.
-                const BindingFlags any = BindingFlags.Instance
-                    | BindingFlags.Public | BindingFlags.NonPublic;
                 var field = type.GetField("inputHandler", any);
-                var method = type.GetMethod("CheckForInput", any);
-                if (field == null || method == null) continue;
-
+                if (field == null) continue;
                 HandlerFields[type] = field;
-                yield return method;
+
+                // Swap before every place a poll can happen. Declared-only:
+                // inherited FsmStateAction virtuals would duplicate targets.
+                foreach (var name in new[] { "CheckForInput", "OnEnter", "OnUpdate" })
+                {
+                    var m = type.GetMethod(name, any | BindingFlags.DeclaredOnly);
+                    if (m != null) yield return m;
+                }
             }
         }
 
         /// <summary>
         /// Which Knight's input should this FSM read? An FSM living on a Knight
-        /// uses that Knight. Anything in the world uses the nearest one, which
-        /// is whoever is standing in its trigger.
+        /// uses that Knight; anything in the world uses the nearest one — the
+        /// one standing in its trigger.
         /// </summary>
         private static InputHandler ResolveFor(GameObject owner)
         {
-            var heroes = CoopManager.AllHeroes.ToList();
-            if (owner == null || heroes.Count == 0) return null;
+            if (owner == null) return null;
 
             var onHero = owner.GetComponentInParent<HeroController>();
             if (onHero != null) return Reflect.GetInputHandler(onHero);
 
-            var here = owner.transform.position;
-            var nearest = heroes
-                .OrderBy(h => (h.transform.position - here).sqrMagnitude)
-                .First();
+            var heroes = CoopManager.AllHeroes.ToList();
+            if (heroes.Count == 0) return null;
 
+            var here = owner.transform.position;
+            HeroController nearest = null;
+            var best = float.MaxValue;
+            foreach (var h in heroes)
+            {
+                var d = (h.transform.position - here).sqrMagnitude;
+                if (d < best) { best = d; nearest = h; }
+            }
             return Reflect.GetInputHandler(nearest);
         }
 
         internal static void Retarget(object action)
         {
             if (!CoopManager.Active) return;
-
             if (!HandlerFields.TryGetValue(action.GetType(), out var field)) return;
 
-            var owner = (action as HutongGames.PlayMaker.FsmStateAction)?.Fsm?.GameObject;
-            if (owner == null) return;
+            var fsm = (action as HutongGames.PlayMaker.FsmStateAction)?.Fsm;
+            var box = Cache.GetValue(action, _ => new Resolution { RosterVersion = -1 });
 
-            var handler = ResolveFor(owner);
-            if (handler != null) field.SetValue(action, handler);
+            if (box.RosterVersion != RosterVersion || box.Handler == null)
+            {
+                box.Handler = ResolveFor(fsm?.GameObject);
+                box.RosterVersion = RosterVersion;
+            }
+
+            if (box.Handler == null) return;
+            field.SetValue(action, box.Handler);
+
+            // Interaction ownership: a world FSM (no hero parent) whose resolved
+            // Knight is an extra pressing an interaction button right now gets
+            // claimed for that Knight — its whole sequence (seating, dialogue)
+            // then executes as them via FsmOwnership.
+            var hero = box.Handler.GetComponentInParent<HeroController>();
+            if (hero == null)
+            {
+                // Extra handlers live on inactive carrier objects; map back.
+                hero = CoopManager.HeroForHandler(box.Handler);
+            }
+            if (hero == null || !CoopManager.IsExtra(hero)) return;
+            if (fsm?.GameObject == null || fsm.GameObject.GetComponentInParent<HeroController>() != null) return;
+
+            var a = box.Handler.inputActions;
+            if (a != null && (a.up.WasPressed || a.down.WasPressed || a.cast.WasPressed || a.attack.WasPressed))
+                FsmOwnership.ClaimWorldFsm(fsm, hero);
         }
     }
 
     [HarmonyPatch]
     internal static class ListenForPatches
     {
-        private static IEnumerable<MethodBase> TargetMethods() => CoopInput.ListenForCheckMethods();
+        private static IEnumerable<MethodBase> TargetMethods() => CoopInput.ListenForPollMethods();
 
-        // Runs before every poll, including the one OnEnter performs immediately,
-        // so a state cannot fire on the wrong player's input even on entry.
+        // Runs before every poll — including OnEnter's immediate check — so a
+        // state can never fire on the wrong player's input.
         private static void Prefix(object __instance) => CoopInput.Retarget(__instance);
     }
 }
