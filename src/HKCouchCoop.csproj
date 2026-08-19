@@ -47,6 +47,10 @@
       <HintPath>$(GameRefs)/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameRefs)/UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.IMGUIModule">
       <HintPath>$(GameRefs)/UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
