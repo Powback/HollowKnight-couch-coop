@@ -11,12 +11,12 @@ namespace HKCouchCoop
     [HarmonyPatch(typeof(HeroController), nameof(HeroController.MaxHealth))]
     internal static class RestPatchMaxHealth
     {
-        private static void Postfix() => CoopManager.PartyRest();
+        private static void Postfix() => Guard.Run(() => CoopManager.PartyRest(), "PartyRest");
     }
 
     [HarmonyPatch(typeof(HeroController), nameof(HeroController.MaxHealthKeepBlue))]
     internal static class RestPatchMaxHealthKeepBlue
     {
-        private static void Postfix() => CoopManager.PartyRest();
+        private static void Postfix() => Guard.Run(() => CoopManager.PartyRest(), "PartyRest");
     }
 }

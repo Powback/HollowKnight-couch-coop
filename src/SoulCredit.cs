@@ -21,13 +21,13 @@ namespace HKCouchCoop
     {
         private static void Prefix(HitInstance hitInstance, out Masquerade<HeroController>.Scope __state)
         {
-            __state = null;
-            if (!CoopManager.Active || hitInstance.Source == null) return;
-
-            var attacker = hitInstance.Source.GetComponentInParent<HeroController>();
-            if (attacker == null || !CoopManager.IsExtra(attacker)) return;
-
-            __state = Reflect.HeroMasq.Impersonate(attacker);
+            __state = Guard.Run(() =>
+            {
+                if (!CoopManager.Active || hitInstance.Source == null) return null;
+                var attacker = hitInstance.Source.GetComponentInParent<HeroController>();
+                if (attacker == null || !CoopManager.IsExtra(attacker)) return null;
+                return Reflect.HeroMasq.Impersonate(attacker);
+            }, "SoulCredit");
         }
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)

@@ -85,7 +85,7 @@ namespace HKCouchCoop
     internal static class FsmUpdatePatch
     {
         private static void Prefix(Fsm __instance, out Masquerade<HeroController>.Scope __state)
-            => __state = FsmOwnership.BeginFor(__instance);
+            => __state = Guard.Run(() => FsmOwnership.BeginFor(__instance), "FsmOwnership");
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         { __state?.Restore(); return __exception; }
     }
@@ -94,7 +94,7 @@ namespace HKCouchCoop
     internal static class FsmFixedUpdatePatch
     {
         private static void Prefix(Fsm __instance, out Masquerade<HeroController>.Scope __state)
-            => __state = FsmOwnership.BeginFor(__instance);
+            => __state = Guard.Run(() => FsmOwnership.BeginFor(__instance), "FsmOwnership");
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         { __state?.Restore(); return __exception; }
     }
@@ -103,7 +103,7 @@ namespace HKCouchCoop
     internal static class FsmLateUpdatePatch
     {
         private static void Prefix(Fsm __instance, out Masquerade<HeroController>.Scope __state)
-            => __state = FsmOwnership.BeginFor(__instance);
+            => __state = Guard.Run(() => FsmOwnership.BeginFor(__instance), "FsmOwnership");
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         { __state?.Restore(); return __exception; }
     }

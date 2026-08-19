@@ -38,9 +38,9 @@ namespace HKCouchCoop
     internal static class TinkPatch
     {
         private static void Prefix(Collider2D collision, out Masquerade<HeroController>.Scope __state)
-            => __state = CoopManager.Active
+            => __state = Guard.Run(() => CoopManager.Active
                 ? EnvironmentPatches.ImpersonateExtra(EnvironmentPatches.HeroOf(collision))
-                : null;
+                : null, "Tink");
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         { __state?.Restore(); return __exception; }
@@ -61,9 +61,9 @@ namespace HKCouchCoop
         }
 
         private static void Prefix(Collision2D collision, out Masquerade<HeroController>.Scope __state)
-            => __state = CoopManager.Active
+            => __state = Guard.Run(() => CoopManager.Active
                 ? EnvironmentPatches.ImpersonateExtra(EnvironmentPatches.HeroOf(collision.collider))
-                : null;
+                : null, "CollisionEvent");
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
         { __state?.Restore(); return __exception; }
@@ -84,18 +84,20 @@ namespace HKCouchCoop
             => AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(SoulOrb), "Zoom"));
 
         private static void Prefix(object __instance, out Masquerade<HeroController>.Scope __state)
+            => __state = Guard.Run(() => Resolve(__instance), "SoulOrb collect");
+
+        private static Masquerade<HeroController>.Scope Resolve(object stateMachine)
         {
-            __state = null;
-            if (!CoopManager.Active || TargetField == null) return;
+            if (!CoopManager.Active || TargetField == null) return null;
 
             // The state machine's `<>4__this` is the SoulOrb.
-            var self = __instance.GetType()
+            var self = stateMachine.GetType()
                 .GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(f => f.FieldType == typeof(SoulOrb))?.GetValue(__instance) as SoulOrb;
-            if (self == null) return;
+                .FirstOrDefault(f => f.FieldType == typeof(SoulOrb))?.GetValue(stateMachine) as SoulOrb;
+            if (self == null) return null;
 
             var target = TargetField.GetValue(self) as Transform;
-            __state = EnvironmentPatches.ImpersonateExtra(EnvironmentPatches.HeroOf(target));
+            return EnvironmentPatches.ImpersonateExtra(EnvironmentPatches.HeroOf(target));
         }
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)
@@ -124,12 +126,12 @@ namespace HKCouchCoop
             }
         }
 
-        private static void Postfix(HeroBox __instance)
+        private static void Postfix(HeroBox __instance) => Guard.Run(() =>
         {
             if (HeroField == null) return;
             var own = __instance.GetComponentInParent<HeroController>();
             if (own != null) HeroField.SetValue(__instance, own);
-        }
+        }, "HeroBox route");
     }
 
     /// <summary>Sight-gated enemies see whoever is nearest, not only player one.</summary>
@@ -137,11 +139,13 @@ namespace HKCouchCoop
     internal static class LineOfSightPatch
     {
         private static void Prefix(LineOfSightDetector __instance, out Masquerade<HeroController>.Scope __state)
-        {
-            __state = null;
-            if (!CoopManager.Active) return;
+            => __state = Guard.Run(() => Nearest(__instance), "LineOfSight");
 
-            var here = __instance.transform.position;
+        private static Masquerade<HeroController>.Scope Nearest(LineOfSightDetector det)
+        {
+            if (!CoopManager.Active) return null;
+
+            var here = det.transform.position;
             HeroController nearest = null;
             var best = float.MaxValue;
             foreach (var h in CoopManager.AllHeroes)
@@ -149,7 +153,7 @@ namespace HKCouchCoop
                 var d = (h.transform.position - here).sqrMagnitude;
                 if (d < best) { best = d; nearest = h; }
             }
-            __state = EnvironmentPatches.ImpersonateExtra(nearest);
+            return EnvironmentPatches.ImpersonateExtra(nearest);
         }
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)

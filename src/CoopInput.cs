@@ -147,6 +147,7 @@ namespace HKCouchCoop
 
         // Runs before every poll — including OnEnter's immediate check — so a
         // state can never fire on the wrong player's input.
-        private static void Prefix(object __instance) => CoopInput.Retarget(__instance);
+        private static void Prefix(object __instance)
+            => Guard.Run(() => CoopInput.Retarget(__instance), "ListenFor retarget");
     }
 }

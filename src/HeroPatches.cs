@@ -22,9 +22,9 @@ namespace HKCouchCoop
     {
         private static void Prefix(HeroController __instance, out Masquerade<HeroController>.Scope __state)
         {
-            __state = CoopManager.IsExtra(__instance)
+            __state = Guard.Run(() => CoopManager.IsExtra(__instance)
                 ? Reflect.HeroMasq.Impersonate(__instance)
-                : null;
+                : null, "SceneInit masq");
         }
 
         private static Exception Finalizer(Exception __exception, Masquerade<HeroController>.Scope __state)

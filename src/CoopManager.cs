@@ -341,7 +341,10 @@ namespace HKCouchCoop
             var shouldFreeze = Plugin.Cfg.FreezeExtrasInCutscenes.Value
                 && p1.controlReqlinquished
                 && GameManager.instance != null
-                && !GameManager.instance.isPaused;
+                && !GameManager.instance.isPaused
+                // Sitting at a bench relinquishes control too — but a bench is
+                // a lounge, not a cutscene; friends stay free.
+                && (PlayerData.instance == null || !PlayerData.instance.atBench);
 
             if (shouldFreeze == _extrasFrozen) return;
             _extrasFrozen = shouldFreeze;

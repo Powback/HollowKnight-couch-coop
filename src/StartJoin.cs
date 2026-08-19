@@ -119,7 +119,7 @@ namespace HKCouchCoop
         {
             private static bool Prefix(ref IEnumerator __result)
             {
-                var pad = JoinCandidate();
+                var pad = Guard.Run(() => JoinCandidate(), "JoinCandidate");
                 if (pad == null) return true;    // a real pause — run vanilla
 
                 __result = Nothing();            // swallow the pause…
@@ -128,7 +128,8 @@ namespace HKCouchCoop
                 CoopManager.Join(pad);           // …and make it a join
                 if (CoopManager.PlayerCount > before)
                 {
-                    NativeHud.Notify($"Player {CoopManager.PlayerCount} joined  —  {CoopManager.PlayerCount} players");
+                    NativeHud.Notify(
+                        $"Player {CoopManager.PlayerCount} joined ({pad.Name}) — hold Start to leave", 4f);
                     CoopCamera.Reset();
                 }
                 return false;

@@ -58,7 +58,7 @@ namespace HKCouchCoop
         }
 
         private static void Prefix(HeroController __instance, out PoolSwap<CoopPlayer>.Scope __state)
-            => __state = HealthPool.Begin(__instance);
+            => __state = Guard.Run(() => HealthPool.Begin(__instance), "Health swap");
 
         private static Exception Finalizer(Exception __exception, PoolSwap<CoopPlayer>.Scope __state)
         {

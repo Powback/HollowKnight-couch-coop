@@ -85,14 +85,24 @@ namespace HKCouchCoop
         internal static class DiePatch
         {
             private static bool Prefix(HeroController __instance, ref IEnumerator __result)
-                => HandleDeath(__instance, ref __result, hazard: false);
+            {
+                var r = __result;
+                var runVanilla = Guard.Run(() => HandleDeath(__instance, ref r, hazard: false), true, "Death");
+                __result = r;
+                return runVanilla;
+            }
         }
 
         [HarmonyPatch(typeof(HeroController), "DieFromHazard")]
         internal static class DieFromHazardPatch
         {
             private static bool Prefix(HeroController __instance, ref IEnumerator __result)
-                => HandleDeath(__instance, ref __result, hazard: true);
+            {
+                var r = __result;
+                var runVanilla = Guard.Run(() => HandleDeath(__instance, ref r, hazard: true), true, "HazardDeath");
+                __result = r;
+                return runVanilla;
+            }
         }
     }
 }
