@@ -59,15 +59,7 @@ namespace HKCouchCoop
         /// enumerates first, so the default of 0 is right there. -1 reserves
         /// nothing (player one on keyboard — every pad is a joiner).
         /// </summary>
-        private static InputDevice ReservedPad()
-        {
-            var idx = Plugin.Cfg.PlayerOnePadIndex.Value;
-            if (idx < 0) return null;
-
-            var attached = InputManager.Devices?
-                .Where(d => d != null && d.IsAttached).ToList();
-            return attached != null && idx < attached.Count ? attached[idx] : null;
-        }
+        private static InputDevice ReservedPad() => InputAssign.P1Device();
 
         /// <summary>
         /// A Start press that should become a join rather than a pause, or null.
@@ -83,6 +75,7 @@ namespace HKCouchCoop
             return InputManager.Devices?.FirstOrDefault(d =>
                 d != null && d.IsAttached
                 && d != reserved
+                && InputAssign.RoleOf(d) != PadRole.None
                 && !PadInput.Claimed.Contains(d)
                 && StartPressed(d));
         }

@@ -166,10 +166,28 @@ namespace HKCouchCoop
                 return;
             }
 
+            // Explicit roles override everything: None never joins, player
+            // one's pad never joins, a fixed slot joins AS that slot.
+            var role = InputAssign.RoleOf(device);
+            if (role == PadRole.None || role == PadRole.P1)
+            {
+                LastJoinRejection = role == PadRole.None
+                    ? "That controller is set to None"
+                    : "That's player one's controller";
+                Plugin.Log.LogInfo($"Join refused for '{device.Name}': role {role}.");
+                return;
+            }
+
             var input = PadInput.Create(device);
             if (input == null) return;
 
-            var number = PlayerCount + 1;
+            var slot = InputAssign.SlotOf(role);
+            var number = slot != 0 ? slot : NextFreeNumber();
+            if (Extras.Any(e => e.Number == number))
+            {
+                LastJoinRejection = $"Player {number} slot is taken";
+                return;
+            }
             var hero = SpawnClone(p1, number, p1.transform.position + new Vector3(1.5f * (number - 1), 0f, 0f));
             if (hero == null)
             {
@@ -193,6 +211,48 @@ namespace HKCouchCoop
             ExcludeFromP1(device);
 
             Plugin.Log.LogInfo($"Player {number} joined on '{device.Name}'. Now {PlayerCount} players.");
+        }
+
+        private static int NextFreeNumber()
+        {
+            for (var n = 2; n <= 4; n++)
+                if (Extras.All(e => e.Number != n)) return n;
+            return PlayerCount + 1;
+        }
+
+        /// <summary>Re-apply pinning/exclusions when roles change in the menu.</summary>
+        internal static void OnAssignmentsChanged()
+        {
+            var p1 = P1Actions;
+            if (p1 == null) return;
+
+            var p1Pad = InputAssign.P1Device();
+            if (p1Pad != null)
+            {
+                // Player one has a DECLARED pad: pin the action set to it — the
+                // same twin-proof mechanism extras use. Keyboard keeps working
+                // (keyboard bindings are not device-scoped).
+                p1.Device = p1Pad;
+                p1.IncludeDevices.Clear();
+                p1.IncludeDevices.Add(p1Pad);
+                foreach (var d in ExcludedFromP1) p1.ExcludeDevices.Remove(d);
+                ExcludedFromP1.Clear();
+            }
+            else
+            {
+                p1.Device = null;
+                p1.IncludeDevices.Clear();
+                if (Active) ExcludeFromP1(null);   // keyboard-P1: refresh exclude-all
+            }
+
+            // None-role pads are dead to player one even with no one joined.
+            foreach (var d in InputManager.Devices)
+            {
+                if (d == null || !d.IsAttached) continue;
+                if (InputAssign.RoleOf(d) == PadRole.None && !p1.ExcludeDevices.Contains(d))
+                    p1.ExcludeDevices.Add(d);
+            }
+            Plugin.Log.LogInfo("Input assignments applied.");
         }
 
         /// <summary>Puts a slain shade's owner back on the field where it fell.</summary>
@@ -471,9 +531,9 @@ namespace HKCouchCoop
             var p1 = P1Actions;
             if (p1 == null || device == null) return;
 
-            if (Plugin.Cfg.PlayerOnePadIndex.Value < 0)
+            if (device != null && InputAssign.P1Device() == null)
             {
-                // Player one is DECLARED keyboard-only: while anyone is joined,
+                // Player one is keyboard (no pad assigned P1): while anyone is joined,
                 // player one needs no pad at all — so exclude every attached
                 // device. This is what defeats Steam Input's device twins (the
                 // physical pad appears as both a raw device and a virtual
@@ -489,6 +549,7 @@ namespace HKCouchCoop
                 return;
             }
 
+            if (device == null) return;
             if (!p1.ExcludeDevices.Contains(device)) p1.ExcludeDevices.Add(device);
             ExcludedFromP1.Add(device);
         }
@@ -497,7 +558,7 @@ namespace HKCouchCoop
         {
             // Keyboard-declared player one: exclusions clear only when the last
             // extra leaves (any earlier and a duplicate twin would leak back).
-            if (Plugin.Cfg.PlayerOnePadIndex.Value < 0)
+            if (InputAssign.P1Device() == null)
             {
                 if (Extras.Count == 0)
                 {
@@ -518,7 +579,7 @@ namespace HKCouchCoop
         /// Start-join reads the device directly).</summary>
         private static void OnDeviceAttached(InputDevice device)
         {
-            if (!Active || Plugin.Cfg.PlayerOnePadIndex.Value >= 0) return;
+            if (!Active || InputAssign.P1Device() != null) return;
             var p1 = P1Actions;
             if (p1 == null || device == null) return;
             if (!p1.ExcludeDevices.Contains(device)) p1.ExcludeDevices.Add(device);

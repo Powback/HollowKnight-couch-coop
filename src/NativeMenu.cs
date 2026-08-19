@@ -32,6 +32,16 @@ namespace HKCouchCoop
         private static readonly Dictionary<MenuOptionHorizontal, Row> Ours =
             new Dictionary<MenuOptionHorizontal, Row>();
 
+        // Device-assignment rows: a fixed pool created once (so controller
+        // navigation registers once), relabeled to the live device list on
+        // every menu open. Row semantics: move each input between roles —
+        // Auto | None | P1 | P2 | P3 | P4. None is the parking spot for Steam
+        // Input ghost twins. The keyboard is structurally player one's.
+        private const int PadRowPool = 6;
+        private static readonly List<MenuOptionHorizontal> PadRows =
+            new List<MenuOptionHorizontal>();
+        private static readonly string[] RoleNames = { "Auto", "None", "P1", "P2", "P3", "P4" };
+
         private static List<Row> BuildRows()
         {
             var c = Plugin.Cfg;
@@ -86,13 +96,6 @@ namespace HKCouchCoop
                         return v <= 30 ? 0 : v <= 55 ? 1 : v <= 80 ? 2 : 3;
                     },
                     Set = i => c.ReviveHealthPercent.Value = new[] { 25, 50, 75, 100 }[Mathf.Clamp(i, 0, 3)],
-                },
-                new Row
-                {
-                    Label = "Player One Pad",
-                    Options = new[] { "Keyboard", "Pad 1", "Pad 2", "Pad 3" },
-                    Get = () => Mathf.Clamp(c.PlayerOnePadIndex.Value + 1, 0, 3),
-                    Set = i => c.PlayerOnePadIndex.Value = i - 1,
                 },
                 new Row
                 {
@@ -158,7 +161,10 @@ namespace HKCouchCoop
             // ConfigureNavigation can run repeatedly; ask the screen itself
             // whether our rows already exist rather than trusting a flag.
             if (template.transform.parent.Cast<Transform>().Any(t => t.name.StartsWith(RowPrefix)))
+            {
+                RefreshPadRows();   // device list may have changed since last open
                 return;
+            }
 
             // Row spacing measured from the screen's own rows: cloned rows keep
             // the template's local position, so without a layout group they
@@ -195,8 +201,80 @@ namespace HKCouchCoop
                 created.Add(clone);
             }
 
+            // Device-assignment pool, below the static rows.
+            for (var k = 0; k < PadRowPool; k++)
+            {
+                var padRow = CloneRow(template, new Row
+                {
+                    Label = "Input",
+                    Options = RoleNames,
+                    Get = () => 0,
+                    Set = _ => { },
+                });
+                if (padRow == null) continue;
+                var lp = template.transform.localPosition;
+                padRow.transform.localPosition = new Vector3(lp.x, baseY - spacing * (++index), lp.z);
+                padRow.name = RowPrefix + "Pad_" + k;
+                PadRows.Add(padRow);
+                created.Add(padRow);
+            }
+            RefreshPadRows();
+
             if (created.Count > 0) Register(screen, created);
             Plugin.Log.LogInfo($"Added {created.Count} multiplayer settings to the options menu.");
+        }
+
+        private static void RefreshPadRows()
+        {
+            PadRows.RemoveAll(r => r == null);
+            if (PadRows.Count == 0) return;
+
+            var ids = InputAssign.AttachedIds();
+
+            for (var k = 0; k < PadRows.Count; k++)
+            {
+                var option = PadRows[k];
+
+                if (k == 0)
+                {
+                    // Keyboard: fixed to player one.
+                    SetLabel(option.gameObject, option, "K · Keyboard");
+                    var fixedRow = new Row
+                    {
+                        Label = "K · Keyboard",
+                        Options = new[] { "P1" },
+                        Get = () => 0,
+                        Set = _ => { },
+                    };
+                    Ours[option] = fixedRow;
+                    option.optionList = fixedRow.Options;
+                    option.SetOptionTo(0);
+                    option.gameObject.SetActive(true);
+                    continue;
+                }
+
+                var deviceIndex = k - 1;
+                if (deviceIndex >= ids.Count)
+                {
+                    option.gameObject.SetActive(false);
+                    continue;
+                }
+
+                var id = ids[deviceIndex];
+                var shortName = id.Length > 22 ? id.Substring(0, 22) : id;
+                SetLabel(option.gameObject, option, $"G{deviceIndex + 1} · {shortName}");
+                var row = new Row
+                {
+                    Label = id,
+                    Options = RoleNames,
+                    Get = () => (int)InputAssign.RoleOfId(id),
+                    Set = i => InputAssign.SetRole(id, (PadRole)Mathf.Clamp(i, 0, 5)),
+                };
+                Ours[option] = row;
+                option.optionList = row.Options;
+                option.SetOptionTo(Mathf.Clamp(row.Get(), 0, RoleNames.Length - 1));
+                option.gameObject.SetActive(true);
+            }
         }
 
         private static MenuOptionHorizontal CloneRow(MenuOptionHorizontal template, Row row)

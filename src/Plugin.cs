@@ -9,6 +9,7 @@ namespace HKCouchCoop
 {
     internal sealed class Config
     {
+        internal readonly ConfigEntry<string> PadAssignments;
         internal readonly ConfigEntry<bool> IndependentHealth;
         internal readonly ConfigEntry<bool> ShadeRevive;
         internal readonly ConfigEntry<bool> JoinWithStart;
@@ -33,6 +34,9 @@ namespace HKCouchCoop
 
         internal Config(ConfigFile f)
         {
+            PadAssignments = f.Bind("General", "PadAssignments", "",
+                "Explicit device roles, managed from the in-game menu (Options > Game). " +
+                "Format: 'DeviceName#ordinal:Role;...' with roles Auto/None/P1/P2/P3/P4.");
             IndependentHealth = f.Bind("General", "IndependentHealth", true,
                 "Each extra player has their own masks (player one keeps the real save's). " +
                 "Off = one shared pool: anyone's hit costs the team, any death is a team death.");
@@ -92,7 +96,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.6.9")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
