@@ -83,14 +83,14 @@ namespace HKCouchCoop
 
         private static bool BuildEntryButton(UIManager uim)
         {
-            // Find the Options-list buttons by their serialized onClick targets.
-            var buttons = uim.optionsMenuScreen.GetComponentsInChildren<Button>(true)
-                .Where(b => PersistentTargets(b).Any(n => n.StartsWith("UIGoTo")))
+            // HK's option-list entries are MenuButton (a Selectable that handles
+            // submit itself), not Unity Buttons with onClick handlers — probing
+            // for onClick targets found nothing, which is why no entry appeared.
+            var buttons = uim.optionsMenuScreen.GetComponentsInChildren<MenuButton>(true)
                 .OrderByDescending(b => b.transform.localPosition.y).ToList();
-            var template = buttons.FirstOrDefault(
-                b => PersistentTargets(b).Contains("UIGoToGameOptionsMenu")) ?? buttons.FirstOrDefault();
-            if (template == null) return false;
+            if (buttons.Count == 0) return false;
 
+            var template = buttons[0];
             var step = buttons.Count >= 2
                 ? buttons[0].transform.localPosition - buttons[1].transform.localPosition
                 : new Vector3(0f, 60f, 0f);
@@ -101,22 +101,36 @@ namespace HKCouchCoop
             foreach (var txt in _entryButton.GetComponentsInChildren<Text>(true)) txt.text = "MULTIPLAYER";
             foreach (var tmp in _entryButton.GetComponentsInChildren<TMPro.TMP_Text>(true)) tmp.text = "MULTIPLAYER";
 
-            var last = buttons.Last();
-            _entryButton.transform.localPosition = last.transform.localPosition - step;
+            // Strip whatever navigation the clone inherited (serialized onClick,
+            // event triggers), then attach ours. Unity dispatches ISubmitHandler
+            // to EVERY component on the object, so our handler runs alongside
+            // MenuButton's own flash/sound without replacing it.
+            foreach (var b in _entryButton.GetComponents<Button>())
+                b.onClick = new Button.ButtonClickedEvent();
+            foreach (var et in _entryButton.GetComponents<UnityEngine.EventSystems.EventTrigger>())
+                UnityEngine.Object.DestroyImmediate(et);
+            _entryButton.AddComponent<MultiplayerEntry>();
 
-            var button = _entryButton.GetComponent<Button>();
-            button.onClick = new Button.ButtonClickedEvent();   // clears serialized calls
-            button.onClick.AddListener(() => Guard.Run(Show, "Show multiplayer screen"));
+            _entryButton.transform.localPosition =
+                buttons[buttons.Count - 1].transform.localPosition - step;
 
-            NativeMenu.AppendToButtonList(uim.optionsMenuScreen, button);
+            var selectable = _entryButton.GetComponent<MenuButton>() as Selectable
+                             ?? _entryButton.GetComponent<Selectable>();
+            if (selectable != null) NativeMenu.AppendToButtonList(uim.optionsMenuScreen, selectable);
             _entryButton.SetActive(true);
             return true;
         }
 
-        private static IEnumerable<string> PersistentTargets(Button b)
+        /// <summary>Opens our screen when its menu entry is submitted or clicked.</summary>
+        internal sealed class MultiplayerEntry : MonoBehaviour,
+            UnityEngine.EventSystems.ISubmitHandler,
+            UnityEngine.EventSystems.IPointerClickHandler
         {
-            for (var i = 0; i < b.onClick.GetPersistentEventCount(); i++)
-                yield return b.onClick.GetPersistentMethodName(i) ?? "";
+            public void OnSubmit(UnityEngine.EventSystems.BaseEventData _)
+                => Guard.Run(Show, "Show multiplayer screen");
+
+            public void OnPointerClick(UnityEngine.EventSystems.PointerEventData _)
+                => Guard.Run(Show, "Show multiplayer screen");
         }
 
         private static void Show()

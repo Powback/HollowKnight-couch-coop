@@ -613,10 +613,15 @@ namespace HKCouchCoop
             var p1 = P1Actions;
             if (p1 == null || device == null) return;
 
-            var p1Pad = InputAssign.P1Device();
+            // Pin ONLY on an explicit menu assignment. Pinning to a GUESSED
+            // device is how player one loses inputs entirely when the guess is a
+            // ghost twin that reports presence but feeds nothing. With a merely
+            // observed pad, excluding the joiner's pad is enough and cannot
+            // strand anyone.
+            var p1Pad = InputAssign.AssignedP1Device();
             if (p1Pad != null)
             {
-                // Player one plays on a known pad: PIN their action set to it.
+                // Player one declared this pad: PIN their action set to it.
                 // Pinning beats excluding — it is immune to Steam Input's ghost
                 // twins AND cannot strand player one, which muting every pad did
                 // whenever we wrongly assumed keyboard.
@@ -625,6 +630,14 @@ namespace HKCouchCoop
                 p1.IncludeDevices.Add(p1Pad);
                 foreach (var d in ExcludedFromP1) p1.ExcludeDevices.Remove(d);
                 ExcludedFromP1.Clear();
+                return;
+            }
+
+            if (device != null && InputAssign.P1Device() != null)
+            {
+                // Player one is on an observed pad: exclude just the joiner's.
+                if (!p1.ExcludeDevices.Contains(device)) p1.ExcludeDevices.Add(device);
+                ExcludedFromP1.Add(device);
                 return;
             }
 
