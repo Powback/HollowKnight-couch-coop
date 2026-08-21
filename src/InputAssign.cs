@@ -89,12 +89,48 @@ namespace HKCouchCoop
         internal static PadRole RoleOfId(string id)
             => Map().TryGetValue(id, out var role) ? role : PadRole.Auto;
 
-        /// <summary>The pad assigned to player one, if any (else keyboard-P1 mode).</summary>
-        internal static InputDevice P1Device()
+        /// <summary>The pad EXPLICITLY assigned to player one in the menu, if any.</summary>
+        internal static InputDevice AssignedP1Device()
         {
             foreach (var kv in Map())
                 if (kv.Value == PadRole.P1) return Resolve(kv.Key);
             return null;
+        }
+
+        /// <summary>Last pad observed driving player one's own action set.</summary>
+        private static InputDevice _observedP1Pad;
+
+        /// <summary>
+        /// Watch which device player one is really playing on. InControl's
+        /// action set reports the device that last fed it, so a player on a pad
+        /// is detected without any configuration — which is what stops us from
+        /// assuming "keyboard" and either stealing their pad for a joiner or
+        /// muting every pad including theirs.
+        /// </summary>
+        internal static void Tick()
+        {
+            var handler = GameManager.instance != null ? GameManager.instance.inputHandler : null;
+            var actions = handler != null ? handler.inputActions : null;
+            if (actions == null) return;
+
+            var active = actions.ActiveDevice;
+            if (active == null || active == InputDevice.Null || !active.IsAttached) return;
+            if (PadInput.Claimed.Contains(active)) return;   // that's an extra's pad
+            _observedP1Pad = active;
+        }
+
+        /// <summary>
+        /// The device player one uses: their menu assignment if they made one,
+        /// otherwise whatever they have actually been playing on. Null means
+        /// player one is genuinely on keyboard.
+        /// </summary>
+        internal static InputDevice P1Device()
+        {
+            var assigned = AssignedP1Device();
+            if (assigned != null) return assigned;
+            return _observedP1Pad != null && _observedP1Pad.IsAttached
+                   && !PadInput.Claimed.Contains(_observedP1Pad)
+                ? _observedP1Pad : null;
         }
 
         /// <summary>Attached pads, stable order, for the menu.</summary>

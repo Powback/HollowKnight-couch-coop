@@ -2,8 +2,8 @@
 
 Everything up to v0.6.x was verified by a person launching the game and looking
 at it, and only v0.01 was ever tested that way at all. This is the rig that
-replaced that: it launches Hollow Knight, loads a save, plugs in two virtual
-controllers, presses Start, walks player two around, and asserts on the mod's
+replaced that: it launches Hollow Knight, loads a save, plugs in three virtual
+controllers, presses Start, walks the Knights around, and asserts on the mod's
 own live state — with no human involved.
 
 ```bash
@@ -93,6 +93,18 @@ with no file is accepted, finds nothing, and quietly returns to the main menu �
 indistinguishable from the load hanging. The scenario scans the save directory
 and picks the lowest slot that actually exists.
 
+## The configuration under test: a real couch
+
+Three virtual pads, and **pad 1 is player one** (`PlayerOnePadIndex=0`) — the
+controller the game was already using, which always pauses and never joins.
+Pad 2 joins as player two, pad 3 as player three.
+
+That choice is the point. Putting player one on the keyboard
+(`PlayerOnePadIndex=-1`) is easier to arrange, because then every pad is a
+joiner and no pad has to be reserved — and it silently skips the half that
+actually breaks: whether **player one's own controller still drives player one
+once a clone exists**. The first version of this rig made exactly that mistake.
+
 ## What the cases check
 
 `~/Projects/PowOS/lib/mods/e2e/scenarios/hollowknight.py`:
@@ -101,29 +113,39 @@ and picks the lowest slot that actually exists.
 2. a save is loaded and the game is in gameplay
 3. the virtual controllers reached the game
 4. each virtual pad is a distinct device inside the game
-5. pressing Start on pad 1 spawns player two
-6. **player two moves on its own pad, and player one does not**
-7. a second pad joins as player three
-8. each Knight has its own health pool
-9. holding Start removes a player
+5. **player one is driven by his own pad** — the baseline, before any clone
+6. pressing Start on pad 2 spawns player two
+7. **player two moves on pad 2, and player one does not**
+8. **player one STILL moves on his own pad after player two joined**
+9. a third pad joins as player three
+10. each Knight has its own health pool
+11. holding Start removes a player
 
-Case 6 is the one that matters, and it is deliberately two assertions. Checking
-only "player two moved" passes when *both* Knights move together, which is
-exactly what happens if the clone ends up sharing player one's input handler.
-The check is "the driven Knight travelled AND the other one did not". That
-shape caught a real defect on the first full run.
+Cases 7 and 8 are the claim, and they are deliberately symmetric. Checking only
+that player two moved passes when *both* Knights move together — the signature
+of a clone sharing player one's input handler. Checking only player two also
+misses the opposite failure: joining rebinds input (the joining pad is excluded
+from player one's action set so it cannot drive him or the pause menu), and
+excluding the wrong device leaves **player one** deaf to his own pad. From the
+couch that is the more obvious bug, because player one was working a second
+earlier.
 
-It also samples the whole 1.5-second hold rather than the endpoints, because
-two samples cannot tell "walked right, then got yanked back" from "never
-moved", and both happen here — the leash pulls a straggler to player one, and a
+Case 5 exists so case 8 means something. Without a baseline, "player one
+stopped moving after player two joined" is indistinguishable from "player one
+never moved on that pad at all", and those have different causes.
+
+Every hold samples the whole 1.5 seconds rather than the endpoints, because two
+samples cannot tell "walked right, then got yanked back" from "never moved",
+and both happen here — the leash pulls a straggler toward player one, and a
 freshly spawned clone settles under gravity.
 
 ### The cases are proved to fail
 
 `powos mods e2e prove hollowknight` runs the real scenario against a fake game
 with no engine behind it: once healthy, then once per known fault
-(`shared_input`, `moves_left`, `same_device`, `no_input`, `pads_share_device`,
-`never_leaves`, `pad_never_joins`, `clone_has_no_transform`, …). Every case must
+(`shared_input`, `p1_dead_after_join`, `p1_never_moves`, `moves_left`,
+`same_device`, `no_input`, `pads_share_device`, `never_leaves`,
+`pad_never_joins`, `clone_has_no_transform`, …). Every case must
 pass when healthy and go red under the fault it claims to detect; a case that
 stays green is named as decoration. It takes seconds instead of a five-minute
 launch, which is the only reason it gets run.
@@ -144,13 +166,13 @@ two and three as sharing one pad when they were not — my bug, not the mod's.
 Identify by GUID, or behaviourally: hold a button and ask the game which device
 index lights up.
 
-**InControl may publish duplicates.** On v0.6.8 each virtual pad appeared as
+**Steam Input publishes device twins.** On v0.6.8 each virtual pad appeared as
 *two* in-game devices (pad 1 → indices [0,1], pad 2 → [2,3]) — measured by the
 button-press probe, not guessed. The mod excludes a joined pad from player one's
-action set, and with duplicates it excludes one twin while the other keeps
-driving player one. On v0.7.2 the mapping is 1:1 (pad 1 → [1], pad 2 → [2]), so
-either the mod or the device enumeration changed. If per-player input misbehaves
-with *real* controllers, check the device list first.
+action set; with twins it excludes one and the other keeps driving player one.
+v0.6.9 ("defeat Steam Input device twins for keyboard-declared player one")
+addressed this, and the probe now measures 1:1. If per-player input misbehaves
+with *real* controllers, read `/devices` first — the twin count is right there.
 
 **Steam must be running**; the harness starts it if not, and launches through
 `steam -applaunch 367520` so the run uses the same Proton and launch options a
@@ -165,17 +187,18 @@ only a reboot returns.
 to it (autosave on room transitions). The harness copies `user*.dat*` first and
 puts them back afterwards, including when the run fails.
 
-## Known state as of the last run
+## Known state
 
-Run against **v0.7.2**, 7 of 9 cases passing:
+The last recorded runs were against **v0.7.2** with the *old* keyboard-player-one
+configuration, 6 of 9 cases passing:
 
-* FAIL — *player two moves on its own pad, and player one does not*: player two
-  moved `+0.00` world units over a 1.5s right-hold. The pad is enumerated and
-  maps to its own device, and the same pad's Start press spawns the player
-  correctly, so input reaches the mod but not the clone's movement.
-* FAIL — *a second pad joins as player three*: pad 2's Start leaves the count at
-  2 with the game still `PLAYING` (so it is not being swallowed as a pause).
+* FAIL — *player two moves on its own pad*: player two moved `+0.00` world
+  units over a 1.5s right-hold. The pad is enumerated, maps to its own device,
+  and the same pad's Start press spawns the player correctly — so input reaches
+  the mod but not the clone's movement.
+* FAIL — *a second pad joins as player three*.
+* FAIL — *holding Start removes a player*.
 
-Both are reproducible from a cold run. Neither is a harness artefact: the same
-session passes the spawn, health-pool and leave cases. The mod was moving
-(0.6.8 → 0.7.2) while these runs happened, so re-run before acting on them.
+Those numbers predate the three-pad rewrite and should be re-taken. Re-run
+before acting on them; the mod moved 0.6.8 → 0.7.2 during testing, and the
+configuration the rig uses has since changed to the real couch layout.

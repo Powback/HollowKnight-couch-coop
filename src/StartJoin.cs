@@ -74,8 +74,9 @@ namespace HKCouchCoop
 
             return InputManager.Devices?.FirstOrDefault(d =>
                 d != null && d.IsAttached
-                && d != reserved
+                && d != reserved                                   // player one's own pad pauses
                 && InputAssign.RoleOf(d) != PadRole.None
+                && InputAssign.RoleOf(d) != PadRole.P1
                 && !PadInput.Claimed.Contains(d)
                 && StartPressed(d));
         }

@@ -578,9 +578,24 @@ namespace HKCouchCoop
             var p1 = P1Actions;
             if (p1 == null || device == null) return;
 
-            if (device != null && InputAssign.P1Device() == null)
+            var p1Pad = InputAssign.P1Device();
+            if (p1Pad != null)
             {
-                // Player one is keyboard (no pad assigned P1): while anyone is joined,
+                // Player one plays on a known pad: PIN their action set to it.
+                // Pinning beats excluding — it is immune to Steam Input's ghost
+                // twins AND cannot strand player one, which muting every pad did
+                // whenever we wrongly assumed keyboard.
+                p1.Device = p1Pad;
+                p1.IncludeDevices.Clear();
+                p1.IncludeDevices.Add(p1Pad);
+                foreach (var d in ExcludedFromP1) p1.ExcludeDevices.Remove(d);
+                ExcludedFromP1.Clear();
+                return;
+            }
+
+            if (device != null)
+            {
+                // Player one is genuinely on keyboard: while anyone is joined,
                 // player one needs no pad at all — so exclude every attached
                 // device. This is what defeats Steam Input's device twins (the
                 // physical pad appears as both a raw device and a virtual
@@ -605,20 +620,17 @@ namespace HKCouchCoop
         {
             // Keyboard-declared player one: exclusions clear only when the last
             // extra leaves (any earlier and a duplicate twin would leak back).
-            if (InputAssign.P1Device() == null)
-            {
-                if (Extras.Count == 0)
-                {
-                    var p1 = P1Actions;
-                    if (p1 != null)
-                        foreach (var d in ExcludedFromP1) p1.ExcludeDevices.Remove(d);
-                    ExcludedFromP1.Clear();
-                }
-                return;
-            }
+            if (Extras.Count > 0) return;   // still players in — keep the pin/exclusions
 
-            P1Actions?.ExcludeDevices.Remove(device);
-            ExcludedFromP1.Remove(device);
+            var actions = P1Actions;
+            if (actions != null)
+            {
+                foreach (var d in ExcludedFromP1) actions.ExcludeDevices.Remove(d);
+                // Un-pin: player one goes back to accepting any device solo.
+                actions.Device = null;
+                actions.IncludeDevices.Clear();
+            }
+            ExcludedFromP1.Clear();
         }
 
         /// <summary>A pad plugged in mid-session: keyboard-declared player one
