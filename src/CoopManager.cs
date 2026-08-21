@@ -52,6 +52,33 @@ namespace HKCouchCoop
             }
         }
 
+        /// <summary>
+        /// Knights the camera and leash may consider. Player one always counts
+        /// — everyone else only once they are actually in the room. Vanilla
+        /// parks a hero at y = -2000 while it is not in a gameplay scene, and
+        /// during a room transition a clone sits there: framing that point
+        /// drags the view to the floor, out of sight of both players.
+        /// </summary>
+        internal static IEnumerable<HeroController> FramableHeroes
+        {
+            get
+            {
+                var p1 = HeroController.instance;
+                if (p1 == null) yield break;
+                yield return p1;
+
+                var anchor = p1.transform.position;
+                foreach (var e in Extras)
+                {
+                    var h = e.Hero;
+                    if (h == null || !h.isHeroInPosition) continue;
+                    // Parked or otherwise nowhere near the room: not framable.
+                    if ((h.transform.position - anchor).sqrMagnitude > 400f * 400f) continue;
+                    yield return h;
+                }
+            }
+        }
+
         internal static bool IsExtra(HeroController hc) =>
             hc != null && Extras.Any(e => ReferenceEquals(e.Hero, hc));
 
@@ -487,7 +514,7 @@ namespace HKCouchCoop
                     : (HeroController.instance != null ? Camera.main : null);
                 if (cam == null) return;
 
-                var heroes = AllHeroes.ToList();
+                var heroes = FramableHeroes.ToList();
                 if (heroes.Count < 2) return;
 
                 // Inside a camera lock zone the co-op camera stands down — the

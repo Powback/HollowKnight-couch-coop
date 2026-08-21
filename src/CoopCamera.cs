@@ -89,8 +89,15 @@ namespace HKCouchCoop
                 return;
             }
 
-            var heroes = CoopManager.AllHeroes.ToList();
-            if (heroes.Count < 2) return;
+            var heroes = CoopManager.FramableHeroes.ToList();
+            if (heroes.Count < 2)
+            {
+                // Only player one is framable (mid-transition, or everyone
+                // parked): leave the camera to vanilla and re-snap when the
+                // group is whole again.
+                _hasSmoothed = false;
+                return;
+            }
 
             var bounds = Enclose(heroes);
 
