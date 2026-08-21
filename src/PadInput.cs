@@ -100,6 +100,11 @@ namespace HKCouchCoop
             // behaves exactly like the settings screen says. Falls back to the
             // game's defaults when unavailable.
             var m = CurrentMapping();
+            // Menu accept/cancel, matching the game's own convention — without
+            // these an extra driving their own dialogue has no submit/cancel.
+            a.menuSubmit.AddDefaultBinding(InputControlType.Action1);
+            a.menuCancel.AddDefaultBinding(InputControlType.Action2);
+
             a.jump.AddDefaultBinding(m?.jump ?? InputControlType.Action1);
             a.attack.AddDefaultBinding(m?.attack ?? InputControlType.Action3);
             a.cast.AddDefaultBinding(m?.cast ?? InputControlType.Action2);

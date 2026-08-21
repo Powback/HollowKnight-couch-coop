@@ -126,6 +126,11 @@ namespace HKCouchCoop
         /// </summary>
         internal static HeroController DialogueOwner()
         {
+            // Extras frozen by OUR cutscene sync have controlReqlinquished set
+            // by us, not by a modal of their own — reading it as ownership let
+            // an extra's buttons drive player one's menus (their B = Cancel).
+            if (_extrasFrozen) return null;
+
             var owner = FsmOwnership.InteractionOwner;
             if (owner == null) return null;
             if (FindExtra(owner) == null) { FsmOwnership.InteractionOwner = null; return null; }
@@ -443,6 +448,9 @@ namespace HKCouchCoop
             }
 
             if (Active) _sceneChangePending = true;
+
+            // Interaction claims belong to the room they were made in.
+            FsmOwnership.InteractionOwner = null;
 
             // The HUD lives on the old scene's canvas; rebuild against the new one.
             NativeHud.Invalidate();
