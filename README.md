@@ -77,9 +77,11 @@ navigation, and is released again on leave.
 > reconfigured. The game funnels every pause through one method
 > (`GameManager.PauseGameToggle`); a Harmony prefix asks which physical pad
 > pressed Start, and if it was a spare one, that single pause is swallowed and
-> becomes a join instead. Player one's pad (`PlayerOnePadIndex`) and the
-> keyboard always pause normally. If joining ever misbehaves, `F6` works
-> regardless, or set `JoinWithStart = false`.
+> becomes a join instead. Player one's own pad and the keyboard always pause
+> normally: the mod watches which device has been driving player one and
+> treats that one as theirs, and the MULTIPLAYER screen can assign it
+> explicitly if a ghost device confuses the guess. If joining ever misbehaves,
+> `F6` works regardless, or set `JoinWithStart = false`.
 
 ### Game version
 
@@ -99,10 +101,9 @@ Written to `BepInEx/config/com.powback.hkcouchcoop.cfg` on first run.
 | Setting | Default | Meaning |
 |---|---|---|
 | `JoinWithStart` | `true` | Press Start on a spare pad to join; hold Start ~1s to leave |
-| `PlayerOnePadIndex` | `0` | Which pad is player one's and always pauses. `0` fits a Steam Deck (built-in pad enumerates first); `-1` means player one is on keyboard and every pad may Start-join |
 | `JoinKey` / `LeaveKey` | `F6` / `F7` | Keyboard fallback for joining/removing players |
 | `MaxPlayers` | `4` | Total players including player one (2–4) |
-| `LeashDistance` | `30` | Pull an extra player back to player one past this gap; `0` disables |
+| `LeashDistance` | `-1` | `-1` zooms out first and only pulls a straggler in when even maximum zoom cannot frame the group; a positive value is a fixed gap in world units; `0` never pulls |
 | `AutoZoom` | `true` | Widen the view to hold everyone |
 | `MaxZoomFactor` | `1.6` | Furthest zoom-out, relative to normal |
 | `ZoomMargin` | `6` | World units kept clear around the group |

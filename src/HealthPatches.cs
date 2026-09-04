@@ -27,6 +27,14 @@ namespace HKCouchCoop
             .Add(() => PlayerData.instance.MPReserve,  v => PlayerData.instance.MPReserve = v,
                  p => p.SoulReserve, (p, v) => p.SoulReserve = v);
 
+        /// <summary>True while a pool swap is unclosed — at a frame boundary,
+        /// a leak with the shared PlayerData holding a clone's numbers.</summary>
+        internal static bool AnyOpen => Swap.AnyOpen;
+
+        /// <summary>Give PlayerData its own values back. See Plugin's frame
+        /// boundary check; mirrors ShadeRevive.ForceRestoreBank.</summary>
+        internal static int ForceEndAll() => Swap.ForceEndAll();
+
         internal static PoolSwap<CoopPlayer>.Scope Begin(HeroController hc)
         {
             if (!Plugin.Cfg.IndependentHealth.Value) return null;

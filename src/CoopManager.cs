@@ -598,7 +598,7 @@ namespace HKCouchCoop
         {
             if (hero == null) return;
             var heroCols = hero.GetComponents<Collider2D>();
-            foreach (var ihc in Object.FindObjectsOfType<IgnoreHeroCollision>())
+            foreach (var ihc in Object.FindObjectsByType<IgnoreHeroCollision>(FindObjectsSortMode.None))
             {
                 var col = ihc.GetComponent<Collider2D>();
                 if (col == null) continue;

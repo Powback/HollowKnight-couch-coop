@@ -95,15 +95,23 @@ and picks the lowest slot that actually exists.
 
 ## The configuration under test: a real couch
 
-Three virtual pads, and **pad 1 is player one** (`PlayerOnePadIndex=0`) — the
-controller the game was already using, which always pauses and never joins.
-Pad 2 joins as player two, pad 3 as player three.
+Three virtual pads, and **pad 1 is player one** — the controller the game was
+already using, which always pauses and never joins. Pad 2 joins as player two,
+pad 3 as player three.
 
-That choice is the point. Putting player one on the keyboard
-(`PlayerOnePadIndex=-1`) is easier to arrange, because then every pad is a
-joiner and no pad has to be reserved — and it silently skips the half that
-actually breaks: whether **player one's own controller still drives player one
-once a clone exists**. The first version of this rig made exactly that mistake.
+That choice is the point. Putting player one on the keyboard is easier to
+arrange, because then every pad is a joiner and no pad has to be reserved — and
+it silently skips the half that actually breaks: whether **player one's own
+controller still drives player one once a clone exists**. The first version of
+this rig made exactly that mistake.
+
+Nothing configures this any more. There was a `PlayerOnePadIndex` setting; the
+v0.7.0 assignment matrix replaced it and it was removed in v0.7.10 after being
+found dead — bound, documented, read by nothing. Player one's pad is now
+whichever device has actually been driving player one, so the rig gets the
+couch layout by having pad 1 move player one before any join, which case 5
+already does. An explicit assignment can still be made on the MULTIPLAYER
+screen when a ghost device confuses the observation.
 
 ## What the cases check
 

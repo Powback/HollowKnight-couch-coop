@@ -13,7 +13,6 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<bool> IndependentHealth;
         internal readonly ConfigEntry<bool> ShadeRevive;
         internal readonly ConfigEntry<bool> JoinWithStart;
-        internal readonly ConfigEntry<int> PlayerOnePadIndex;
         internal readonly ConfigEntry<KeyCode> JoinKey;
         internal readonly ConfigEntry<KeyCode> LeaveKey;
         internal readonly ConfigEntry<int> MaxPlayers;
@@ -48,10 +47,6 @@ namespace HKCouchCoop
                 "Press Start on a spare pad to join (the pause is swallowed for that press); " +
                 "hold Start about a second to leave. Nobody's input is reconfigured — the pause " +
                 "is intercepted at the game's single pause entry point instead.");
-            PlayerOnePadIndex = f.Bind("General", "PlayerOnePadIndex", 0,
-                "Which attached pad belongs to player one and always pauses normally. 0 is right " +
-                "for a Steam Deck (built-in controls enumerate first). -1 means player one is on " +
-                "keyboard and every pad may Start-join.");
             JoinKey = f.Bind("General", "JoinKey", KeyCode.F6,
                 "Adds the next player, using the first unclaimed gamepad.");
             LeaveKey = f.Bind("General", "LeaveKey", KeyCode.F7,
@@ -97,7 +92,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.9")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.10")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -166,22 +161,35 @@ namespace HKCouchCoop
             new ThrottledLog(30, m => Log.LogError(m));
 
         /// <summary>
-        /// Singleton drift detector.
+        /// Frame-boundary check on both identity mechanisms.
         ///
-        /// Every masquerade in this mod opens in a Harmony prefix and closes
-        /// in the matching finalizer, so by the time a MonoBehaviour Update
-        /// runs, none may still be open. If the singleton is not player one
-        /// here, a scope leaked — and because the singleton feeds the death
-        /// path, scene transitions and the game's global input handler, a leak
-        /// is silent and permanent rather than merely wrong for a frame.
+        /// Every scope in this mod — the singleton masquerade and the health
+        /// pool swap alike — opens in a Harmony prefix and closes in the
+        /// matching finalizer, so by the time a MonoBehaviour Update runs,
+        /// none may still be open. One that is, leaked.
         ///
-        /// This is a detector, not a mechanism: it should never fire. If it
-        /// does, the fix belongs at the leaking scope, and the log names the
-        /// frame it started on.
+        /// Both leaks are silent and permanent rather than wrong for a frame,
+        /// and both are worth repairing rather than only reporting: the
+        /// singleton feeds the death path, scene transitions and the game's
+        /// global input handler, and a leaked pool swap leaves the shared
+        /// PlayerData holding a clone's health and soul — which the next
+        /// autosave writes to the save file.
+        ///
+        /// These are detectors, not mechanisms: they should never fire. If one
+        /// does, the fix belongs at the leaking scope.
         /// </summary>
-        private void AssertSingletonIntact()
+        private void AssertScopesClosed()
         {
             if (!CoopManager.Active) return;
+
+            if (HealthPool.AnyOpen)
+            {
+                var n = HealthPool.ForceEndAll();
+                _driftErrors.Log(Time.unscaledTimeAsDouble,
+                    $"Pool swap leak (throttled): {n} health/soul scope(s) were still open at a "
+                    + "frame boundary, leaving shared PlayerData holding a clone's pools. "
+                    + "Closed them; a swap finalizer is not running.");
+            }
 
             var p1 = CoopManager.PlayerOne;
             if (p1 == null) return;
@@ -206,7 +214,7 @@ namespace HKCouchCoop
 
         private void UpdateCore()
         {
-            AssertSingletonIntact();
+            AssertScopesClosed();
 
             if (Input.GetKeyDown(Cfg.JoinKey.Value))
             {

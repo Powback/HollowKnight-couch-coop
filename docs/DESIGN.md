@@ -17,8 +17,9 @@ the contract the code implements; deviations found in play are bugs.
   taught that lesson).
 - **Leaving**: hold Start (configurable seconds), F7, unplugging the pad, or
   quitting to the menu. All four paths tear down identically.
-- Start-to-join can be disabled (`JoinWithStart=false`); `PlayerOnePadIndex`
-  says which pad is player one's (`0` Deck-style, `-1` keyboard-P1).
+- Start-to-join can be disabled (`JoinWithStart=false`). Player one's pad is
+  observed from their own action set, or assigned explicitly on the
+  MULTIPLAYER screen; there is no pad-index setting any more.
 
 ## During play
 
@@ -115,6 +116,32 @@ is covered, and deferred work resumes with the real singleton back. A drift
 detector in `Plugin.Update` re-asserts the singleton at the frame boundary,
 where no scope may legitimately be open. It should never fire; if it logs, the
 fix belongs at the leaking scope, not at the detector.
+
+## Pool discipline
+
+Independent health and soul use the other half of the same idea: for the
+duration of one Knight's own state-touching call, the shared `PlayerData`
+fields hold that Knight's pools, and what vanilla computed is written back
+afterwards. `PlayerData` is the save file, so the same two limits cost more
+here than they do for the singleton.
+
+**A leaked scope reaches the disk.** A masquerade left open makes the game act
+on the wrong Knight; a pool swap left open leaves `PlayerData` holding a
+clone's health and soul, and the next autosave writes them. `PoolSwap.Begin` is
+therefore all-or-nothing — snapshot, apply with rollback, and only then claim
+the reentrancy depth, so a throw partway through cannot mark a player as
+swapped without swapping them (which used to turn every later scope into a
+passthrough and put them back on the shared pool for the session, silently).
+`End` restores the shared object in a `finally`: losing a pool write costs a
+player some health, leaving the shared object holding it costs the save.
+
+**It does not cross a `yield`.** Of the wrapped methods only `TakeDamage`
+defers anything, and its three coroutines are accounted for: `Die` and
+`DieFromHazard` are intercepted for extras by `DeathPatches`, and `StartRecoil`
+touches no pool. Anything added to that list needs the same check.
+
+The frame-boundary detector in `Plugin.Update` covers both mechanisms and
+repairs both. Like the singleton one, it should never fire.
 
 ## Known quirks (deliberately deferred, not forgotten)
 
