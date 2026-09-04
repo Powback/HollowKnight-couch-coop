@@ -97,7 +97,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.8")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.9")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -162,8 +162,52 @@ namespace HKCouchCoop
             }
         }
 
+        private readonly ThrottledLog _driftErrors =
+            new ThrottledLog(30, m => Log.LogError(m));
+
+        /// <summary>
+        /// Singleton drift detector.
+        ///
+        /// Every masquerade in this mod opens in a Harmony prefix and closes
+        /// in the matching finalizer, so by the time a MonoBehaviour Update
+        /// runs, none may still be open. If the singleton is not player one
+        /// here, a scope leaked — and because the singleton feeds the death
+        /// path, scene transitions and the game's global input handler, a leak
+        /// is silent and permanent rather than merely wrong for a frame.
+        ///
+        /// This is a detector, not a mechanism: it should never fire. If it
+        /// does, the fix belongs at the leaking scope, and the log names the
+        /// frame it started on.
+        /// </summary>
+        private void AssertSingletonIntact()
+        {
+            if (!CoopManager.Active) return;
+
+            var p1 = CoopManager.PlayerOne;
+            if (p1 == null) return;
+
+            // Backing field, not the property: the property resolves a null
+            // singleton with FindObjectOfType, which would mask the very
+            // drift being looked for.
+            var stray = Reflect.HeroInstance;
+            if (ReferenceEquals(stray, p1)) return;
+
+            // Repair before reporting. Naming the stray needs its gameObject,
+            // and a destroyed one throws on that — which would leave the
+            // singleton broken for the sake of a log line. `== null` here is
+            // Unity's operator, so it covers destroyed as well as unset.
+            Reflect.HeroInstance = p1;
+            _driftErrors.Log(Time.unscaledTimeAsDouble,
+                "Singleton drift (throttled): HeroController._instance was left pointing at "
+                + $"'{(stray == null ? "a destroyed or unset hero" : stray.gameObject.name)}' "
+                + "outside any ownership scope. Player one restored; "
+                + "a masquerade finalizer is not running.");
+        }
+
         private void UpdateCore()
         {
+            AssertSingletonIntact();
+
             if (Input.GetKeyDown(Cfg.JoinKey.Value))
             {
                 var before = CoopManager.PlayerCount;

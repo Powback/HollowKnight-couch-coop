@@ -24,7 +24,11 @@ namespace HKCouchCoop
 
         private static void RedispatchToP1()
         {
-            var p1 = HeroController.instance;
+            // Ground truth, not the singleton: this runs from a death path
+            // that an extra's FSM may be masquerading through, and invoking
+            // Die on the wrong Knight would run the save-file game-over
+            // against a clone.
+            var p1 = CoopManager.PlayerOne;
             if (p1 == null) return;
             var die = AccessTools.Method(typeof(HeroController), "Die");
             if (die?.Invoke(p1, null) is IEnumerator routine)

@@ -80,6 +80,42 @@ version-gate override — numbers that make bad option rows. Correctness fixes
 mask revives). Hardcore = Shared Pool (any death is the team's). Kids/chaos =
 Revive Masks: Full, Leash: Short.
 
+## Singleton discipline
+
+The mod's whole architecture is "point `HeroController._instance` at another
+Knight for the duration of a call". Three rules keep that from leaking, and
+every one of them was a bug first.
+
+**Never ask the singleton who player one is.** Use `CoopManager.PlayerOne`,
+captured on Join before any clone exists. The singleton is *supposed* to lie
+during an ownership scope; code that asks mid-scope and then acts — dispatching
+a death, placing a shade, framing the camera, re-pointing dead geo — acts on
+the wrong Knight. `HeroController.instance` appears in mod code only inside
+comments now, and `Reflect.HeroInstance` only where the *acting* Knight is
+genuinely what is wanted (rumble routing).
+
+**Re-assert the host's caches; you cannot scope them.** A masquerade is scoped
+by time, a cache by lifetime, so one bad read outlives every scope that could
+explain it. `GameManager.hero_ctrl` is the one that matters — its caller hands
+it straight to `inputHandler.AttachHeroController` — and `GameManager.heroLight`
+resolves by tag, which clones also carry. Both are re-asserted to player one
+after every `SetupHeroRefs`.
+
+**A null singleton is not inert.** `HeroController.SilentInstance` answers null
+by running `FindObjectOfType<HeroController>()` *and* `DontDestroyOnLoad` on
+whatever it finds. Clone spawning needs a null singleton — `Awake` destroys any
+hero that is not it — so that window is scoped to `Awake`'s body, which
+provably reads no singleton, rather than to the whole `Instantiate`, which runs
+every `Awake` and `OnEnable` in the cloned hierarchy. Vanilla components read
+the singleton there; `TrackTriggerObjects` subscribes to its `heroInPosition`
+event.
+
+Masquerades also do not survive a `yield`: only the synchronous part of a call
+is covered, and deferred work resumes with the real singleton back. A drift
+detector in `Plugin.Update` re-asserts the singleton at the frame boundary,
+where no scope may legitimately be open. It should never fire; if it logs, the
+fix belongs at the leaking scope, not at the detector.
+
 ## Known quirks (deliberately deferred, not forgotten)
 
 - Benches: one seat per bench (single seating state machine) — but ANY Knight

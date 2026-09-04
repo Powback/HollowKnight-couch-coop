@@ -112,7 +112,7 @@ namespace HKCouchCoop
         {
             var gm = GameManager.instance;
             var pd = PlayerData.instance;
-            var p1 = HeroController.instance;
+            var p1 = CoopManager.PlayerOne;
 
             var players = new List<string>();
             players.Add(PlayerJson(1, p1, pd));
@@ -248,7 +248,7 @@ namespace HKCouchCoop
             var slot = 0;
             if (q.TryGetValue("slot", out raw)) int.TryParse(raw, out slot);
 
-            if (HeroController.instance != null)
+            if (CoopManager.PlayerOne != null)
                 return Json.Object().Add("ok", true).Add("did", "loadsave")
                     .Add("note", "a save is already loaded")
                     .Add("scene", SceneName()).Close();

@@ -30,7 +30,7 @@ namespace HKCouchCoop
     /// group across rooms, downing and reviving them, and tearing everything
     /// down cleanly.
     ///
-    /// Player one is always the vanilla <see cref="HeroController.instance"/>.
+    /// Player one is the vanilla hero, held in <see cref="PlayerOne"/>.
     /// Everyone else is a clone of it.
     /// </summary>
     internal static class CoopManager
@@ -40,12 +40,39 @@ namespace HKCouchCoop
         internal static bool Active => Extras.Count > 0;
         internal static int PlayerCount => Extras.Count + 1;
 
+        private static HeroController _playerOne;
+
+        /// <summary>
+        /// The real player one, and the mod's ground truth for it.
+        ///
+        /// Nothing here may ask <c>HeroController.instance</c> who player one
+        /// is. That singleton is deliberately made to point at a clone for the
+        /// duration of an ownership scope — an extra's FSM tick, their
+        /// SceneInit, their hit credit — so any code that asks mid-scope gets
+        /// the wrong Knight, and code that then acts on it (redispatching a
+        /// death, placing a shade, framing the camera) acts on the wrong one.
+        ///
+        /// Captured on Join, before the first clone and therefore before any
+        /// masquerade can exist, and released with the session.
+        /// </summary>
+        internal static HeroController PlayerOne
+        {
+            get
+            {
+                // Re-derive only outside a session, and from the backing field
+                // rather than the property: a null singleton makes the getter
+                // run FindObjectOfType and DontDestroyOnLoad as a side effect.
+                if (_playerOne == null && !Active) _playerOne = Reflect.HeroInstance;
+                return _playerOne;
+            }
+        }
+
         /// <summary>Every living Knight, player one first. Never null entries.</summary>
         internal static IEnumerable<HeroController> AllHeroes
         {
             get
             {
-                var p1 = HeroController.instance;
+                var p1 = PlayerOne;
                 if (p1 != null) yield return p1;
                 foreach (var e in Extras)
                     if (e.Hero != null) yield return e.Hero;
@@ -63,7 +90,7 @@ namespace HKCouchCoop
         {
             get
             {
-                var p1 = HeroController.instance;
+                var p1 = PlayerOne;
                 if (p1 == null) yield break;
                 yield return p1;
 
@@ -179,7 +206,9 @@ namespace HKCouchCoop
         /// </summary>
         internal static void Join(InputDevice device = null)
         {
-            var p1 = HeroController.instance;
+            // Captures ground truth on the first join, while no clone and so
+            // no masquerade exists to answer this question dishonestly.
+            var p1 = PlayerOne;
             if (p1 == null)
             {
                 LastJoinRejection = "Load a save first";
@@ -305,7 +334,7 @@ namespace HKCouchCoop
         /// <summary>Puts a slain shade's owner back on the field where it fell.</summary>
         internal static void ReviveAt(CoopPlayer player, Vector3 position)
         {
-            var p1 = HeroController.instance;
+            var p1 = PlayerOne;
             if (p1 == null || !Extras.Contains(player)) return;
 
             var hero = SpawnClone(p1, player.Number, position);
@@ -349,6 +378,7 @@ namespace HKCouchCoop
             while (Extras.Count > 0) Remove(Extras[Extras.Count - 1]);
             ShadeRevive.ForceRestoreBank();
             _extrasFrozen = false;   // session state must not leak into the next one
+            _playerOne = null;       // quit-to-menu builds a new hero; re-derive
         }
 
         /// <summary>Removes whichever player is holding this pad.</summary>
@@ -377,16 +407,24 @@ namespace HKCouchCoop
         /// </summary>
         private static HeroController SpawnClone(HeroController p1, int number, Vector3 position)
         {
-            var saved = Reflect.HeroInstance;
+            // HeroController.Awake destroys any hero that is not the
+            // singleton, so the singleton has to be null while the clone
+            // wakes. That is done inside Awake itself (see HeroAwakePatch),
+            // not around this call: a null singleton resolves itself with
+            // FindObjectOfType + DontDestroyOnLoad, and Instantiate runs
+            // Awake and OnEnable for the whole cloned hierarchy, plenty of
+            // which reads the singleton. This window only says which spawn
+            // is ours; the restore below is a backstop for the patch's.
             GameObject cloneGo;
+            SpawnWindow.Begin(p1);
             try
             {
-                Reflect.HeroInstance = null;
                 cloneGo = Object.Instantiate(p1.gameObject, position, p1.transform.rotation);
             }
             finally
             {
-                Reflect.HeroInstance = saved;
+                SpawnWindow.End();
+                Reflect.HeroInstance = p1;
             }
 
             cloneGo.name = $"Knight (Player {number})";
@@ -490,7 +528,7 @@ namespace HKCouchCoop
         {
             if (!Active) return;
 
-            var p1 = HeroController.instance;
+            var p1 = PlayerOne;
             if (p1 == null) return;
 
             SyncCutsceneFreeze(p1);
@@ -519,7 +557,7 @@ namespace HKCouchCoop
                 var cam = GameCameras.instance != null && GameCameras.instance.tk2dCam != null
                     ? GameCameras.instance.tk2dCam.GetComponent<Camera>() : null;
                 cam = cam != null ? cam
-                    : (HeroController.instance != null ? Camera.main : null);
+                    : (PlayerOne != null ? Camera.main : null);
                 if (cam == null) return;
 
                 var heroes = FramableHeroes.ToList();
@@ -571,7 +609,7 @@ namespace HKCouchCoop
 
         internal static void GatherToP1(string reason)
         {
-            var p1 = HeroController.instance;
+            var p1 = PlayerOne;
             if (p1 == null) return;
 
             foreach (var e in Extras)

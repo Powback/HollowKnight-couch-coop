@@ -114,8 +114,8 @@ namespace HKCouchCoop
             var pd = PlayerData.instance;
             Vector3 at = player.Shade != null
                 ? player.Shade.transform.position
-                : (HeroController.instance != null
-                    ? HeroController.instance.transform.position : Vector3.zero);
+                : (CoopManager.PlayerOne != null
+                    ? CoopManager.PlayerOne.transform.position : Vector3.zero);
 
             // Neutralize the bank before the shade's death sequence reads it,
             // restore once that sequence is over.

@@ -27,6 +27,14 @@ namespace HKCouchCoop
         private static readonly FieldInfo CamHeroField =
             AccessTools.Field(typeof(CameraController), "hero_ctrl");
 
+        // GameManager's own hero references. Both are auto-properties with
+        // private setters, and both are CACHES: read once, never re-derived
+        // until what they point at dies. See GameManagerHeroRefsPatch.
+        internal static readonly MethodInfo SetGameManagerHero =
+            AccessTools.PropertySetter(typeof(GameManager), "hero_ctrl");
+        internal static readonly MethodInfo SetGameManagerHeroLight =
+            AccessTools.PropertySetter(typeof(GameManager), "heroLight");
+
         /// <summary>True when every member we depend on was found.</summary>
         internal static bool Verify(out string missing)
         {
@@ -34,6 +42,8 @@ namespace HKCouchCoop
             if (HeroInstanceField == null) missing = "HeroController._instance";
             else if (HeroInputHandlerField == null) missing = "HeroController.inputHandler";
             else if (CamHeroField == null) missing = "CameraController.hero_ctrl";
+            else if (SetGameManagerHero == null) missing = "GameManager.hero_ctrl setter";
+            else if (SetGameManagerHeroLight == null) missing = "GameManager.heroLight setter";
             return missing == null;
         }
 

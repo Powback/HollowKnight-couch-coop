@@ -149,8 +149,11 @@ namespace HKCouchCoop
         {
             if (HeroField == null) return;
             var hero = HeroField.GetValue(__instance) as HeroController;
-            if (hero == null && HeroController.instance != null)
-                HeroField.SetValue(__instance, HeroController.instance);
+            // Player one, not the singleton: this can run inside an extra's
+            // ownership scope, and re-pointing dead geo at a clone reinstates
+            // exactly the dangling reference it is meant to clear.
+            if (hero == null && CoopManager.PlayerOne != null)
+                HeroField.SetValue(__instance, CoopManager.PlayerOne);
         }, "Geo safety");
     }
 
