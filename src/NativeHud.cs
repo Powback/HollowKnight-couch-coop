@@ -63,6 +63,17 @@ namespace HKCouchCoop
                 .GetComponentsInChildren<TextMeshProUGUI>(includeInactive: true)
                 .FirstOrDefault(t => t.font != null);
 
+            // No template means TMP is not ready yet, and adding a
+            // TextMeshProUGUI now throws inside LoadDefaultSettings —
+            // TMP_Settings.instance is null and the exception surfaces as a
+            // NullReferenceException from our Update, once per attempt. A live
+            // label on the HUD canvas IS the proof that TMP has initialised.
+            //
+            // Checked BEFORE anything is created: the object used to be built
+            // first, so every failed attempt also leaked a GameObject onto the
+            // canvas.
+            if (template == null) return false;
+
             var go = new GameObject("HKCouchCoop_Hud");
             go.transform.SetParent(cameras.hudCanvas.transform, worldPositionStays: false);
 
@@ -74,12 +85,9 @@ namespace HKCouchCoop
             rect.sizeDelta = new Vector2(900f, 60f);
 
             var label = go.AddComponent<TextMeshProUGUI>();
-            if (template != null)
-            {
-                label.font = template.font;
-                label.fontSharedMaterial = template.fontSharedMaterial;
-                label.colorGradientPreset = template.colorGradientPreset;
-            }
+            label.font = template.font;
+            label.fontSharedMaterial = template.fontSharedMaterial;
+            label.colorGradientPreset = template.colorGradientPreset;
             label.fontSize = 36f;
             label.alignment = TextAlignmentOptions.Center;
             label.color = Color.white;
