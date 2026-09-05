@@ -554,6 +554,18 @@ namespace HKCouchCoop
 
             if (leash < 0f)
             {
+                // Screen mode exists to stop players losing each other when
+                // the camera cannot stretch far enough. Split-screen solves
+                // that properly, so when it is on, this stands down entirely
+                // rather than racing it: both trigger on exactly the same
+                // "the view cannot hold the group" condition, and whichever
+                // ran first would win — with the leash winning meaning the
+                // stragglers get yanked together a frame before the screen
+                // would have divided, so the split could never be seen.
+                // Fixed distances ("Near"/"Far") are a stated preference and
+                // keep working.
+                if (Plugin.Cfg.SplitScreen.Value) return;
+
                 var cam = GameCameras.instance != null && GameCameras.instance.tk2dCam != null
                     ? GameCameras.instance.tk2dCam.GetComponent<Camera>() : null;
                 cam = cam != null ? cam

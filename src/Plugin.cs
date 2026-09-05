@@ -26,6 +26,8 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<bool> FreezeExtrasInCutscenes;
         internal readonly ConfigEntry<bool> PlayerTints;
         internal readonly ConfigEntry<bool> CameraZoom;
+        internal readonly ConfigEntry<bool> SplitScreen;
+        internal readonly ConfigEntry<float> SplitMergeMargin;
         internal readonly ConfigEntry<float> MaxZoomFactor;
         internal readonly ConfigEntry<float> ZoomMargin;
         internal readonly ConfigEntry<float> ZoomSpeed;
@@ -81,6 +83,13 @@ namespace HKCouchCoop
             PlayerTints = f.Bind("General", "PlayerTints", true,
                 "Give each extra player a soft color cast (blue, ember, green) so everyone " +
                 "stays identifiable. Off = all Knights look identical.");
+            SplitScreen = f.Bind("Camera", "SplitScreen", true,
+                "Divide the screen when the Knights spread further than one view can hold, " +
+                "and merge it back when they regroup. One pane per Knight, up to four.");
+            SplitMergeMargin = f.Bind("Camera", "SplitMergeMargin", 0.15f,
+                "Deadband around the split threshold, as a fraction. Splitting and merging " +
+                "use different thresholds so a marginal group cannot tear the screen in half " +
+                "and back together every few frames.");
             CameraZoom = f.Bind("Camera", "AutoZoom", true,
                 "Widen the view to keep every player in frame.");
             MaxZoomFactor = f.Bind("Camera", "MaxZoomFactor", 1.6f,
@@ -92,7 +101,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.7.12")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.8.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";

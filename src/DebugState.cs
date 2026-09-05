@@ -144,6 +144,7 @@ namespace HKCouchCoop
                 .Add("lastJoinRejection", CoopManager.LastJoinRejection)
                 .AddRaw("players", Json.Array(players))
                 .AddRaw("camera", CameraJson())
+                .AddRaw("split", SplitScreen.LayoutJson())
                 .AddRaw("devices", DevicesArray())
                 .Close();
         }
@@ -362,12 +363,55 @@ namespace HKCouchCoop
         /// first; use this to tell "spawning is broken" apart from "the pad
         /// never reached the game".
         /// </summary>
+        /// <summary>
+        /// Set one allowlisted config value at runtime, and report what it was.
+        ///
+        /// The allowlist is thresholds only — nothing here can enable a
+        /// feature that changes what is being tested, and a caller cannot
+        /// reach a key that is not named.
+        /// </summary>
+        private static string SetConfig(System.Collections.Generic.IDictionary<string, string> q)
+        {
+            string key, raw;
+            if (!q.TryGetValue("key", out key) || !q.TryGetValue("value", out raw))
+                return Json.Object().Add("ok", false)
+                    .Add("error", "setcfg needs key and value").Close();
+
+            var c = Plugin.Cfg;
+            var j = Json.Object().Add("did", "setcfg").Add("key", key);
+            switch (key)
+            {
+                case "MaxZoomFactor":
+                    if (!float.TryParse(raw, out var mz)) break;
+                    j.Add("was", c.MaxZoomFactor.Value); c.MaxZoomFactor.Value = mz;
+                    return j.Add("ok", true).Add("now", mz).Close();
+                case "SplitMergeMargin":
+                    if (!float.TryParse(raw, out var sm)) break;
+                    j.Add("was", c.SplitMergeMargin.Value); c.SplitMergeMargin.Value = sm;
+                    return j.Add("ok", true).Add("now", sm).Close();
+                case "LeashDistance":
+                    if (!float.TryParse(raw, out var ld)) break;
+                    j.Add("was", c.LeashDistance.Value); c.LeashDistance.Value = ld;
+                    return j.Add("ok", true).Add("now", ld).Close();
+                case "SplitScreen":
+                    if (!bool.TryParse(raw, out var ss)) break;
+                    j.Add("was", c.SplitScreen.Value); c.SplitScreen.Value = ss;
+                    return j.Add("ok", true).Add("now", ss).Close();
+                default:
+                    return j.Add("ok", false)
+                        .Add("error", "key not allowlisted")
+                        .Add("accepts", "MaxZoomFactor|SplitMergeMargin|LeashDistance|SplitScreen")
+                        .Close();
+            }
+            return j.Add("ok", false).Add("error", "could not parse '" + raw + "'").Close();
+        }
+
         private static string Command(System.Collections.Generic.IDictionary<string, string> q)
         {
             string what;
             if (!q.TryGetValue("do", out what) || string.IsNullOrEmpty(what))
                 return Json.Object().Add("ok", false).Add("error", "no 'do' parameter")
-                    .Add("accepts", "loadsave|join|leave|leaveall").Close();
+                    .Add("accepts", "loadsave|join|leave|leaveall|setcfg").Close();
 
             var before = CoopManager.PlayerCount;
             switch (what.ToLowerInvariant())
@@ -388,10 +432,21 @@ namespace HKCouchCoop
                 case "leaveall":
                     CoopManager.DespawnAll();
                     break;
+                case "setcfg":
+                    // Move a threshold so a test can reach the behaviour behind
+                    // it. Split-screen only engages once the group needs more
+                    // view than the camera may give, which at the shipped
+                    // MaxZoomFactor is about forty world units of separation —
+                    // further than two Knights can walk apart without leaving
+                    // the room. Lowering the ceiling makes the same code path
+                    // reachable in a room, rather than testing something else.
+                    // Allowlisted, and only reachable at all with the debug
+                    // channel deliberately switched on.
+                    return SetConfig(q);
                 default:
                     return Json.Object().Add("ok", false)
                         .Add("error", "unknown command '" + what + "'")
-                        .Add("accepts", "loadsave|join|leave|leaveall").Close();
+                        .Add("accepts", "loadsave|join|leave|leaveall|setcfg").Close();
             }
 
             return Json.Object()

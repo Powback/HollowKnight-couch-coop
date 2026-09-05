@@ -159,6 +159,7 @@ namespace HKCouchCoop
 
             if (!CoopManager.Active)
             {
+                SplitScreen.Reset();
                 // Restore exactly once after co-op ends; then leave the camera
                 // alone so vanilla zoom effects are never fought.
                 if (_weZoomed)
@@ -182,10 +183,19 @@ namespace HKCouchCoop
             if (__instance.lockZoneList != null && __instance.lockZoneList.Count > 0)
             {
                 _hasSmoothed = false;   // re-snap when the lock releases
+                SplitScreen.Reset();    // panes inside locks are Phase 3 work
                 return;
             }
 
             var heroes = CoopManager.FramableHeroes.ToList();
+
+            // The letterbox tk2d is drawing inside. Panes divide THIS, never
+            // the whole screen: ForceCameraAspect owns it, and replacing it
+            // would undo the game's own aspect handling.
+            var tkCam = Tk2d;
+            var letterbox = tkCam != null ? tkCam.CameraSettings.rect : new Rect(0f, 0f, 1f, 1f);
+            SplitScreen.Evaluate(heroes, cam, letterbox);
+
             if (heroes.Count < 2)
             {
                 // Only player one is framable (mid-transition, or everyone
