@@ -547,6 +547,17 @@ namespace HKCouchCoop
 
             SyncCutsceneFreeze(p1);
 
+            if (HandleSceneChange(p1)) return;
+
+            ApplyLeash(p1);
+        }
+
+        /// <summary>
+        /// Get everyone through the door together. True while that is still in
+        /// progress and nothing else should run.
+        /// </summary>
+        private static bool HandleSceneChange(HeroController p1)
+        {
             if (_sceneChangePending)
             {
                 // Wait for vanilla to finish walking player one in, then put
@@ -555,7 +566,7 @@ namespace HKCouchCoop
                 // this they keep the coordinates they had in the PREVIOUS room,
                 // which is how a party ends up spread between a room's top and
                 // bottom entrances having walked through one door.
-                if (!p1.isHeroInPosition) return;
+                if (!p1.isHeroInPosition) return true;
 
                 GatherToP1("scene change");
 
@@ -568,7 +579,7 @@ namespace HKCouchCoop
                 CoopCamera.Reset();   // snap to the new room, don't sweep across it
                 _gatheredAtFrame = Time.frameCount;
                 _sceneChangePending = false;
-                return;
+                return true;
             }
 
             // Vanilla can still be walking player one further into the room
@@ -602,12 +613,18 @@ namespace HKCouchCoop
                     }
                 }
             }
+            return false;
+        }
 
-            // Leash: pull a straggler back rather than softlocking — but zoom
-            // comes FIRST. "Screen" mode (-1) only teleports once the group
-            // cannot be framed even at maximum zoom (with hysteresis so the
-            // camera gets its chance); fixed distances remain for preference;
-            // 0 disables entirely.
+        /// <summary>
+        /// Leash: pull a straggler back rather than softlocking — but zoom
+        /// comes FIRST. "Screen" mode (-1) only teleports once the group
+        /// cannot be framed even at maximum zoom (with hysteresis so the
+        /// camera gets its chance); fixed distances remain for preference;
+        /// 0 disables entirely.
+        /// </summary>
+        private static void ApplyLeash(HeroController p1)
+        {
             var leash = Plugin.Cfg.LeashDistance.Value;
             if (leash == 0f) return;
 

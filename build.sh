@@ -23,6 +23,19 @@ if [ ! -f refs/Assembly-CSharp.dll ]; then
   cp "$HK/hollow_knight_Data/Managed/"*.dll refs/
 fi
 
+# A gate, not a report: new methods start under the cap and existing ones may
+# not get worse. Skipped only if python is genuinely absent, because a lint
+# that quietly does not run is worse than none.
+if command -v python3 >/dev/null 2>&1; then
+  echo "==> Lint"
+  python3 build/complexity.py --check src/*.cs || {
+    echo "Refusing to build: a method got more tangled." >&2
+    echo "Simplify it, or run 'python3 build/complexity.py --write-budget src/*.cs'" >&2
+    echo "if the new shape is genuinely the simpler one." >&2
+    exit 1
+  }
+fi
+
 echo "==> Building"
 if command -v dotnet >/dev/null 2>&1; then
   dotnet build src/HKCouchCoop.csproj -c Release -o dist

@@ -248,6 +248,24 @@ consecutive failures, stands the whole feature down after three, hands the
 camera back, and says so on the debug channel; the stand-down clears with the
 session.
 
+## Complexity gate
+
+`build/complexity.py` counts decision points per method and `./build.sh` refuses
+to build if one got worse. New methods must come in under 15; everything that
+already existed is frozen at the number it had when the gate went in
+(`build/complexity-budget.json`), so the repo can only get simpler. Strings and
+comments are stripped before counting — this codebase is heavily commented and
+an `if` in prose is not a branch.
+
+It earned its place immediately: `CoopManager.Tick` measured 28, most of it
+added the same night, and the friendly-fire patch 18. Both were split rather
+than budgeted. Six pre-existing methods sit above the cap and are grandfathered
+rather than pretended away.
+
+Raising a budget entry is allowed when a rewrite is genuinely simpler in a way
+the count cannot see — `--write-budget` does it — but it is a decision, not a
+reflex.
+
 ## Known quirks (deliberately deferred, not forgotten)
 
 - Benches: one seat per bench (single seating state machine) — but ANY Knight

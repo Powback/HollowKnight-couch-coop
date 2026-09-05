@@ -152,34 +152,49 @@ namespace HKCouchCoop
             {
                 if (victim == null || ReferenceEquals(victim, attacker)) continue;
                 var id = victim.GetInstanceID();
-                if (alreadyHit.Contains(id)) continue;
+                if (alreadyHit.Contains(id) || !Overlapping(nail, victim)) continue;
 
-                // Collider2D.Distance, NOT IsTouching or a trigger callback.
-                // Trigger events and IsTouching both go through the physics
-                // layer matrix, and nail-versus-hero is disabled there — which
-                // is exactly why a swing passes through a teammate and why
-                // hanging this on OnTriggerEnter2D produced no hits at all.
-                // Distance measures the geometry whatever the matrix says.
-                var touching = false;
-                foreach (var vc in victim.GetComponents<Collider2D>())
-                {
-                    if (vc == null || !vc.enabled) continue;
-                    if (nail.Distance(vc).isOverlapped) { touching = true; break; }
-                }
-                if (!touching) continue;
                 Overlaps++;
-
-                var side = attacker.transform.position.x <= victim.transform.position.x
-                    ? GlobalEnums.CollisionSide.left
-                    : GlobalEnums.CollisionSide.right;
-
-                // Their TakeDamage, so the pool swap puts it on THEIR health,
-                // their invulnerability applies, and their death is their own.
-                victim.TakeDamage(__instance.gameObject, side, damage, hazardType: 0);
+                Strike(attacker, victim, __instance.gameObject, damage);
                 alreadyHit.Add(id);
                 Hits++;
             }
         }, "Friendly fire");
+
+        /// <summary>
+        /// Is the swing actually on them?
+        ///
+        /// Collider2D.Distance, NOT IsTouching and not a trigger callback.
+        /// Both of those go through the physics layer matrix, where
+        /// nail-versus-hero is disabled — which is exactly why a swing passes
+        /// through a teammate, and why hanging this on OnTriggerEnter2D landed
+        /// no hits at all. Distance measures the geometry whatever the matrix
+        /// says about who may collide with whom.
+        /// </summary>
+        private static bool Overlapping(Collider2D nail, HeroController victim)
+        {
+            foreach (var vc in victim.GetComponents<Collider2D>())
+            {
+                if (vc == null || !vc.enabled) continue;
+                if (nail.Distance(vc).isOverlapped) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Hit them with their OWN TakeDamage, so the pool swap puts it on
+        /// their health, their invulnerability frames apply, and their death
+        /// runs their own death — a Shade for an extra, a real game-over for
+        /// player one, who is the save file.
+        /// </summary>
+        private static void Strike(HeroController attacker, HeroController victim,
+                                   GameObject source, int damage)
+        {
+            var side = attacker.transform.position.x <= victim.transform.position.x
+                ? GlobalEnums.CollisionSide.left
+                : GlobalEnums.CollisionSide.right;
+            victim.TakeDamage(source, side, damage, hazardType: 0);
+        }
     }
 
     /// <summary>A swing ends when the nail's damage box is put away.</summary>
