@@ -143,6 +143,46 @@ touches no pool. Anything added to that list needs the same check.
 The frame-boundary detector in `Plugin.Update` covers both mechanisms and
 repairs both. Like the singleton one, it should never fire.
 
+## Split-screen
+
+Panes are cameras. The first driver drove the single world camera N times with
+`cam.Render()` from a LateUpdate postfix; it threw nothing, framed every pane
+correctly, reported a flawless layout, and drew a black world behind an intact
+HUD — LateUpdate runs before the frame's own render pass, and a camera left
+disabled contributes nothing to it, so those passes were cleared before
+reaching the screen. The e2e suite called that 13/13, because every case read
+the layout the mod decided and none could see a pixel. It now screenshots the
+world split and whole and compares brightness.
+
+So the game's own camera keeps pane one, retaining tk2dCamera's projection, the
+image effects and the fade and shake FSMs; extra panes get plain cameras that
+copy its culling mask, clear flags, clip planes and transparency sort, and
+derive their field of view from the pane's shape rather than the screen's. Unity
+draws enabled cameras with viewport rects at the right time, so there is no race
+with the frame loop to lose.
+
+Three constraints are load-bearing:
+
+- **Uniform panes.** `DarknessCameraEffect` sizes its RenderTexture from
+  `mainCamera.pixelWidth/Height` and destroys and recreates it whenever those
+  change. Mixed pane sizes would rebuild a RenderTexture every pass of every
+  frame.
+- **Hysteresis both ways.** One threshold sits exactly where a marginal group
+  oscillates.
+- **Panes divide the letterbox**, never the whole screen: `ForceCameraAspect`
+  owns that rect.
+
+The screen-mode leash stands down when split-screen is on. Both fire on the
+identical "the view cannot hold the group" condition, so while the leash was
+newly working it yanked stragglers together a frame before the screen would
+have divided and the split could never engage.
+
+Failure policy: the driver holds the camera's automatic render off, and a throw
+there would repeat a black screen forever behind `Guard`. So it counts
+consecutive failures, stands the whole feature down after three, hands the
+camera back, and says so on the debug channel; the stand-down clears with the
+session.
+
 ## Known quirks (deliberately deferred, not forgotten)
 
 - Benches: one seat per bench (single seating state machine) — but ANY Knight

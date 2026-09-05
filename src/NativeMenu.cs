@@ -140,6 +140,17 @@ namespace HKCouchCoop
                     Get = () => c.CameraZoom.Value ? 1 : 0,
                     Set = i => c.CameraZoom.Value = i == 1,
                 },
+                new Row
+                {
+                    // Sits next to the zoom row because it is what happens
+                    // after zoom runs out: the view widens to hold everyone,
+                    // and when it cannot stretch any further the screen
+                    // divides instead of dragging a straggler back.
+                    Label = "Split Screen",
+                    Options = new[] { "Off", "On" },
+                    Get = () => c.SplitScreen.Value ? 1 : 0,
+                    Set = i => c.SplitScreen.Value = i == 1,
+                },
             };
         }
 

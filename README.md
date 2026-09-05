@@ -104,6 +104,8 @@ Written to `BepInEx/config/com.powback.hkcouchcoop.cfg` on first run.
 | `JoinKey` / `LeaveKey` | `F6` / `F7` | Keyboard fallback for joining/removing players |
 | `MaxPlayers` | `4` | Total players including player one (2–4) |
 | `LeashDistance` | `-1` | `-1` zooms out first and only pulls a straggler in when even maximum zoom cannot frame the group; a positive value is a fixed gap in world units; `0` never pulls |
+| `SplitScreen` | `true` | Divide the screen when the group outgrows one view; merge when they regroup. One pane per Knight, up to four |
+| `SplitMergeMargin` | `0.15` | Deadband around the split threshold, so a marginal group cannot tear the screen apart and back together |
 | `AutoZoom` | `true` | Widen the view to hold everyone |
 | `MaxZoomFactor` | `1.6` | Furthest zoom-out, relative to normal |
 | `ZoomMargin` | `6` | World units kept clear around the group |
@@ -135,7 +137,11 @@ Known and expected at this stage:
 - **Extra players get a soft color cast** (blue, ember, green) to stay
   identifiable; damage flashes may override it briefly.
 - **Camera zoom is capped** because the game's rendering assumes roughly its
-  normal view size.
+  normal view size. Past that cap the screen splits rather than zooming further.
+- **Split panes other than player one's have no image effects.** The game's own
+  camera keeps the first pane, so it still carries the brightness and colour
+  passes and the screen shake; the extra panes are plain cameras and look
+  slightly flatter. Per-pane lighting is not built yet.
 
 ### Session rules
 
@@ -155,14 +161,30 @@ Things that intentionally end or suspend the co-op session:
 - **Camera lock zones (boss arenas) suspend the co-op camera** — the game's own
   framing wins inside them, and takes back over when the lock releases.
 
+## Split-screen
+
+When the Knights spread further than one view can hold, the screen divides —
+one pane per Knight, up to four — along the axis they are actually separated
+on, and becomes one view again when they regroup. Zoom happens first: the view
+widens to hold everyone and only splits once it cannot stretch any further.
+
+Panes are always the same size as each other. That is a rendering constraint
+rather than a preference: the game's darkness pass sizes its render texture
+from the camera's pixel dimensions and rebuilds it whenever they change, so
+uneven panes would rebuild one every frame.
+
+Splitting and merging use slightly different thresholds, so a group sitting
+exactly on the boundary cannot tear the screen apart and back together every
+few frames.
+
+Turn it off in Options → MULTIPLAYER → Split Screen, or `SplitScreen = false`.
+With it off, the old behaviour returns: past the zoom cap a straggler is pulled
+back to player one.
+
 ## Roadmap / stretch goals
 
-- **Dynamic split-screen** (same room): screen splits vertically when players
-  separate past the zoom cap, merges when they reunite — second camera cloning
-  the vanilla framing per player. Feasible from the current architecture;
-  queued behind play-testing the current build.
-- **Independent cameras anywhere in the same scene** — same work minus the
-  merge, retires the leash.
+- **Independent cameras anywhere in the same scene** — split-screen without the
+  merge, which would retire the leash entirely.
 - *Not* on the roadmap: players in different scenes simultaneously. Rooms are
   authored at the world origin and the world state is singleton to its core
   (scene bounds, ambient light, audio listener, transition pipeline, enemy
