@@ -141,7 +141,8 @@ Known and expected at this stage:
 - **Split panes other than player one's have no image effects.** The game's own
   camera keeps the first pane, so it still carries the brightness and colour
   passes and the screen shake; the extra panes are plain cameras and look
-  slightly flatter. Per-pane lighting is not built yet.
+  slightly flatter. Darkness is not affected — it is a world-projected cutout
+  rather than a per-camera effect, and it is widened to cover every pane.
 
 ### Session rules
 

@@ -308,23 +308,38 @@ namespace HKCouchCoop
 
         internal static float PaneFov(Camera reference, Pane pane, float camZ)
         {
-            if (reference == null || pane == null || pane.Knights.Count == 0) return -1f;
-            var planeZ = PlaneZ(pane.Knights);
+            if (pane == null) return -1f;
+            var aspect = pane.Viewport.height > 0f && Screen.height > 0
+                ? (Screen.width * pane.Viewport.width) / (Screen.height * pane.Viewport.height)
+                : (reference != null ? reference.aspect : 1.78f);
+            return FovFor(pane.Knights, reference, camZ, aspect, clamp: true);
+        }
+
+        /// <summary>
+        /// Vertical fov that holds these Knights at this aspect.
+        ///
+        /// <paramref name="clamp"/> keeps the result inside the configured
+        /// zoom range, which is right for a view a player looks at. It is
+        /// wrong for a view that only has to COVER something — the darkness
+        /// cutout has to reach every pane whatever the zoom rules say, or the
+        /// panes outside it come back unlit.
+        /// </summary>
+        internal static float FovFor(List<HeroController> heroes, Camera reference,
+                                     float camZ, float aspect, bool clamp)
+        {
+            if (reference == null || heroes == null || heroes.Count == 0) return -1f;
+            var planeZ = PlaneZ(heroes);
             var baseHalf = BaseHalfHeight(reference, planeZ);
             if (baseHalf <= 0f) return -1f;
 
-            var aspect = pane.Viewport.height > 0f && Screen.height > 0
-                ? (Screen.width * pane.Viewport.width) / (Screen.height * pane.Viewport.height)
-                : reference.aspect;
-
-            var needed = Mathf.Clamp(
-                RequiredHalfHeight(pane.Knights, Mathf.Max(aspect, 0.01f)),
-                baseHalf,
-                MaxAllowedHalfHeight(reference, planeZ));
+            var needed = RequiredHalfHeight(heroes, Mathf.Max(aspect, 0.01f));
+            needed = clamp
+                ? Mathf.Clamp(needed, baseHalf, MaxAllowedHalfHeight(reference, planeZ))
+                : Mathf.Max(needed, baseHalf);
 
             var dist = Mathf.Abs(camZ - planeZ);
             if (dist <= 0.01f) return -1f;
-            return 2f * Mathf.Atan(needed / dist) * Mathf.Rad2Deg;
+            return Mathf.Min(2f * Mathf.Atan(needed / dist) * Mathf.Rad2Deg, 175f);
         }
 
         /// <summary>

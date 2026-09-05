@@ -228,3 +228,75 @@ namespace HKCouchCoop
         private static VibrationMixer _routed;
     }
 }
+
+namespace HKCouchCoop
+{
+    /// <summary>
+    /// Make the darkness cutout reach every pane.
+    ///
+    /// Darkness is not drawn per camera: a second camera renders a cutout into
+    /// a RenderTexture and publishes it globally as `_DarknessCutout`, with the
+    /// matrix that projects world positions into it as `_DarknessCameraVP`.
+    /// Because that is a full view-projection matrix, ANY world point inside
+    /// that camera's frustum resolves correctly — which means split-screen does
+    /// not need a darkness pass per pane at all. It needs one darkness camera
+    /// wide enough to contain every pane's view.
+    ///
+    /// Left alone, that camera inherits the game camera's framing, which under
+    /// a split is only the first pane — so every other pane samples outside the
+    /// cutout and loses its darkness. Here it is widened to cover the whole
+    /// group instead, deliberately ignoring the configured zoom ceiling: that
+    /// ceiling exists to stop the VIEW stretching past what the game renders
+    /// well, and this camera is never looked at.
+    ///
+    /// Runs as a postfix on EnsureSetup, which OnPreRender calls immediately
+    /// before it computes and publishes the matrix — so the matrix published is
+    /// the widened one.
+    /// </summary>
+    [HarmonyPatch(typeof(DarknessCameraEffect), "EnsureSetup")]
+    internal static class DarknessCoveragePatch
+    {
+        private static readonly FieldInfo DarkCam =
+            AccessTools.Field(typeof(DarknessCameraEffect), "camera");
+        private static readonly FieldInfo MainCam =
+            AccessTools.Field(typeof(DarknessCameraEffect), "mainCamera");
+
+        private static Vector3? _restoreLocal;
+
+        private static void Postfix(DarknessCameraEffect __instance) => Guard.Run(() =>
+        {
+            if (DarkCam == null || MainCam == null) return;
+            var dark = DarkCam.GetValue(__instance) as Camera;
+            if (dark == null) return;
+
+            if (!SplitScreen.Active)
+            {
+                // Put it back exactly once. Its fov needs no restoring —
+                // EnsureSetup copies that from the game camera every frame.
+                if (_restoreLocal.HasValue)
+                {
+                    dark.transform.localPosition = _restoreLocal.Value;
+                    _restoreLocal = null;
+                }
+                return;
+            }
+
+            var main = MainCam.GetValue(__instance) as Camera;
+            if (main == null) return;
+
+            var heroes = CoopManager.FramableHeroes.ToList();
+            if (heroes.Count < 2) return;
+
+            if (!_restoreLocal.HasValue) _restoreLocal = dark.transform.localPosition;
+
+            var bounds = new Bounds(heroes[0].transform.position, Vector3.zero);
+            foreach (var h in heroes) bounds.Encapsulate(h.transform.position);
+
+            var camZ = main.transform.position.z;
+            dark.transform.position = new Vector3(bounds.center.x, bounds.center.y, camZ);
+
+            var fov = CoopCamera.FovFor(heroes, main, camZ, dark.aspect, clamp: false);
+            if (fov > 0.01f) dark.fieldOfView = fov;
+        }, "Darkness coverage");
+    }
+}

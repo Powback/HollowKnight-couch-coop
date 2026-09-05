@@ -188,6 +188,21 @@ identical "the view cannot hold the group" condition, so while the leash was
 newly working it yanked stragglers together a frame before the screen would
 have divided and the split could never engage.
 
+Darkness needs no pass per pane. It is a cutout rendered by its own camera
+into a texture published globally with `_DarknessCameraVP`, the matrix that
+projects world positions into it — so any world point inside that camera's
+frustum resolves correctly, whichever pane it is drawn in. Left alone that
+camera inherits the game camera's framing, which under a split is only the
+first pane, and every other pane samples outside the cutout and comes back
+unlit. It is widened to cover the whole group instead (postfix on
+`DarknessCameraEffect.EnsureSetup`, which runs just before the matrix is
+published), deliberately past the configured zoom ceiling: that ceiling limits
+what the VIEW may stretch to, and nobody looks at this camera.
+
+Not visually confirmed: the runs happen in lit Crossroads rooms, where there is
+little darkness to get wrong. The reasoning is from the projection matrix, and
+the patch is proven not to throw or regress the suite.
+
 Failure policy: the driver holds the camera's automatic render off, and a throw
 there would repeat a black screen forever behind `Guard`. So it counts
 consecutive failures, stands the whole feature down after three, hands the
