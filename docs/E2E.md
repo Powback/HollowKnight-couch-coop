@@ -196,6 +196,18 @@ wait for the process to go, relaunch (`steam -silent`), wait for
 `steamwebhelper`. Before blaming the mod for a launch error, read the
 GameAction lines.
 
+**Steam must be running AND SIGNED IN.** Hollow Knight checks how it was
+launched and quits otherwise — `Application was not launched through Steam!
+Shutting down...` in its own `Player.log` — and it does so *after* BepInEx has
+loaded the plugin and the debug server has answered, so the failure reads as a
+mod crash rather than a licence check. A signed-out client is worse still: it
+accepts `-applaunch` and silently does nothing, which looks identical to a
+broken mod for 180 seconds. Check
+`~/.local/share/Steam/logs/connection_log.txt` for a `RecvMsgClientLogOnResponse`
+in the current session before blaming anything else. The rig will fall back to
+launching through Proton directly (`E2E_DIRECT_LAUNCH`) and says so loudly, but
+for this game that only buys a clearer error.
+
 **Steam must be running**; the harness starts it if not, and launches through
 `steam -applaunch 367520` so the run uses the same Proton and launch options a
 player uses. Hollow Knight needs `WINEDLLOVERRIDES="winhttp=n,b"` in its launch
