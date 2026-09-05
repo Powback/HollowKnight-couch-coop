@@ -306,6 +306,49 @@ namespace HKCouchCoop
             return cc.KeepWithinSceneBounds(target);
         }
 
+        /// <summary>
+        /// Clamp a pane to the room, unless doing so hides the Knight it
+        /// exists to show.
+        ///
+        /// The room's camera limits are why a shared view never drifts off
+        /// into the void, and panes honour them like vanilla does. But a
+        /// Knight can legitimately stand above where the camera may look —
+        /// sceneHeight bounds the CAMERA, not the hero — and then the clamp
+        /// frames empty room above their head while they are outside it. For
+        /// the shared camera that is a compromise between players; for a pane
+        /// whose entire purpose is one Knight it is a pane showing nothing.
+        ///
+        /// So the clamp is used unless it would push that Knight out of frame,
+        /// in which case the honest position wins. Showing a little of the void
+        /// beyond the room beats showing none of the player.
+        /// </summary>
+        private static Vector3 ClampKeepingKnights(CameraController cc, Vector3 target,
+                                                   Pane pane, Camera reference,
+                                                   float fovDeg, float camZ)
+        {
+            var clamped = ClampForView(cc, target);
+            if (pane == null || pane.Knights.Count == 0 || reference == null
+                || fovDeg <= 0.01f) return clamped;
+
+            var planeZ = PlaneZ(pane.Knights);
+            var halfH = HalfHeightAt(reference, fovDeg, planeZ);
+            if (halfH <= 0f) return clamped;
+
+            var aspect = pane.Viewport.height > 0f && Screen.height > 0
+                ? (Screen.width * pane.Viewport.width) / (Screen.height * pane.Viewport.height)
+                : reference.aspect;
+            var halfW = halfH * Mathf.Max(aspect, 0.01f);
+
+            foreach (var k in pane.Knights)
+            {
+                if (k == null) continue;
+                var p = k.transform.position;
+                if (Mathf.Abs(p.x - clamped.x) > halfW || Mathf.Abs(p.y - clamped.y) > halfH)
+                    return target;      // the clamp would lose them; don't clamp
+            }
+            return clamped;
+        }
+
         internal static float PaneFov(Camera reference, Pane pane, float camZ)
         {
             if (pane == null) return -1f;
@@ -375,10 +418,11 @@ namespace HKCouchCoop
             var camZ = source.transform.position.z;
             var centre = p.Centre;
             var target = new Vector3(centre.x, centre.y, camZ);
-            pane.transform.position = ClampForView(cc, target);
 
             var fov = PaneFov(source, p, camZ);
             if (fov > 0.01f) pane.fieldOfView = fov;
+
+            pane.transform.position = ClampKeepingKnights(cc, target, p, source, fov, camZ);
         }
 
         /// <summary>Smallest box containing every Knight.</summary>

@@ -188,6 +188,18 @@ identical "the view cannot hold the group" condition, so while the leash was
 newly working it yanked stragglers together a frame before the screen would
 have divided and the split could never engage.
 
+A pane keeps its own Knight in frame. Panes honour the room's camera limits
+like vanilla does — that is why a view never drifts into the void — but
+`sceneHeight` bounds the CAMERA, not the hero, so a Knight can legitimately
+stand above where the camera may look. For the shared view, clamping there is a
+fair compromise between players. For a pane that exists to show one Knight it
+is a pane showing empty room while the player is outside it, which is how an
+earlier run produced a black-looking pane that was in fact a camera behaving
+correctly. So the clamp applies unless it would push that pane's Knight out of
+frame, and then the true position wins: a sliver of void beyond the room beats
+none of the player. Normal framing is untouched, because the rule only bends in
+the case that produced the empty pane.
+
 Darkness needs no pass per pane. It is a cutout rendered by its own camera
 into a texture published globally with `_DarknessCameraVP`, the matrix that
 projects world positions into it — so any world point inside that camera's
