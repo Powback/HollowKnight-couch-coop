@@ -62,6 +62,161 @@ namespace HKCouchCoop
             _panes = new List<Pane>();
         }
 
+        // ── rendering ────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Tells tk2d to leave the viewport alone.
+        ///
+        /// tk2dCamera resets unityCamera.rect from its own CameraSettings on
+        /// every OnPreCull, which fires once per render pass — so without this
+        /// every pane rect would be overwritten before it drew. The game ships
+        /// the switch for it: UpdateCameraMatrix skips that reset while any
+        /// registered listener reports frozen rendering.
+        /// </summary>
+        private sealed class FreezeViewport : Tk2dGlobalEvents.IListener
+        {
+            internal bool Frozen;
+            public void ColliderUpdated(GameObject go) { }
+            public void TilemapChunkCreated(Transform grandChild) { }
+            public bool IsFrozenCameraRendering() => Frozen;
+        }
+
+        private static readonly FreezeViewport Freeze = new FreezeViewport();
+        private static bool _registered;
+        private static bool _driving;      // we turned the camera's auto-render off
+
+        // Driving the camera means holding its automatic render off, which is
+        // the one state in this mod that is worse to be stuck in than to be
+        // wrong in: a mis-framed pane is a bad frame, a camera left disabled is
+        // a black screen. Guard.Run would swallow a throw here and cheerfully
+        // repeat it every frame forever, so failures are counted and the whole
+        // feature stands itself down rather than leaving the view dark.
+        private const int GiveUpAfter = 3;
+        private static int _failures;
+        private static bool _abandoned;
+
+        /// <summary>True when the driver has given up for this session.</summary>
+        internal static bool Abandoned => _abandoned;
+
+        /// <summary>
+        /// Give every pane a camera and let Unity draw them.
+        ///
+        /// The first design drove one camera N times with cam.Render() from
+        /// LateUpdate. It threw nothing, framed correctly, reported a perfect
+        /// layout — and rendered a black world behind an intact HUD, because
+        /// LateUpdate runs BEFORE the frame's own render pass and a camera
+        /// left disabled contributes nothing to it. Whatever those manual
+        /// passes drew was cleared before anything reached the screen.
+        ///
+        /// So panes are cameras now, which is what Unity supports: enabled
+        /// cameras with viewport rects, drawn by the engine at the proper time
+        /// in the proper order. The game's own camera keeps the first pane —
+        /// it carries tk2dCamera, the image effects and the fade and shake
+        /// FSMs, so the pane player one is in looks exactly like the game
+        /// always did. The extra panes get plain cameras that copy its
+        /// culling, clear settings and clip planes, and compute their own
+        /// perspective from the pane's shape.
+        ///
+        /// The extras deliberately do NOT carry the image-effect stack. A pane
+        /// without the brightness pass looks slightly different; a pane that
+        /// reallocates a RenderTexture every frame costs frames. That trade is
+        /// revisited when per-pane darkness is built.
+        /// </summary>
+        internal static void Draw(Camera cam, CameraController cc, Rect letterbox)
+        {
+            if (cam == null) return;
+
+            if (!Active || _abandoned)
+            {
+                Release(cam, letterbox);
+                return;
+            }
+
+            if (!_registered)
+            {
+                Tk2dGlobalEvents.AddListener(Freeze);
+                _registered = true;
+            }
+
+            var tk = GameCameras.instance != null ? GameCameras.instance.tk2dCam : null;
+            try
+            {
+                Freeze.Frozen = true;   // tk2d must not reclaim the viewport
+                _driving = true;
+
+                // Pane 0 is the game's own camera, framed and cropped in place.
+                cam.rect = _panes[0].Viewport;
+                CoopCamera.FramePane(cam, cc, tk, _panes[0], cam.transform.position.z);
+
+                EnsurePaneCameras(cam);
+                for (var i = 1; i < _panes.Count; i++)
+                {
+                    var pc = _extra[i - 1];
+                    pc.gameObject.SetActive(true);
+                    CoopCamera.ConfigurePaneCamera(pc, cam, cc, _panes[i], i);
+                }
+                for (var i = _panes.Count - 1; i < _extra.Count; i++)
+                    _extra[i].gameObject.SetActive(false);
+
+                _failures = 0;
+            }
+            catch (System.Exception e)
+            {
+                if (++_failures >= GiveUpAfter)
+                {
+                    _abandoned = true;
+                    Plugin.Log.LogError(
+                        "Split-screen failed to set up " + GiveUpAfter + " frames running and "
+                        + "has stood down for this session; the view is whole again. Last error: "
+                        + e);
+                }
+                Release(cam, letterbox);
+                throw;
+            }
+        }
+
+        private static readonly List<Camera> _extra = new List<Camera>();
+        private static GameObject _holder;
+
+        /// <summary>One spare camera per pane beyond the first, made once.</summary>
+        private static void EnsurePaneCameras(Camera source)
+        {
+            if (_holder == null)
+            {
+                _holder = new GameObject("HKCouchCoop Panes");
+                Object.DontDestroyOnLoad(_holder);
+            }
+            while (_extra.Count < _panes.Count - 1)
+            {
+                var go = new GameObject("Pane " + (_extra.Count + 2));
+                go.transform.SetParent(_holder.transform, worldPositionStays: false);
+                var c = go.AddComponent<Camera>();
+                c.enabled = true;
+                _extra.Add(c);
+            }
+        }
+
+        /// <summary>Hand the camera back to the game, once.</summary>
+        private static void Release(Camera cam, Rect letterbox)
+        {
+            if (!_driving) return;
+            _driving = false;
+            Freeze.Frozen = false;
+            cam.rect = letterbox;
+            cam.enabled = true;
+            foreach (var c in _extra)
+                if (c != null) c.gameObject.SetActive(false);
+            var tk = GameCameras.instance != null ? GameCameras.instance.tk2dCam : null;
+            if (tk != null) tk.ZoomFactor = 1f;
+        }
+
+        /// <summary>Clear a stand-down, e.g. when a session ends.</summary>
+        internal static void ClearAbandoned()
+        {
+            _abandoned = false;
+            _failures = 0;
+        }
+
         /// <summary>
         /// Decide the layout for this frame.
         ///
@@ -166,6 +321,7 @@ namespace HKCouchCoop
         {
             var j = Json.Object()
                 .Add("active", Active)
+                .Add("abandoned", _abandoned)
                 .Add("paneCount", _panes.Count);
             var panes = new List<string>();
             foreach (var p in _panes)

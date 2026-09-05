@@ -379,6 +379,7 @@ namespace HKCouchCoop
             ShadeRevive.ForceRestoreBank();
             _extrasFrozen = false;   // session state must not leak into the next one
             _playerOne = null;       // quit-to-menu builds a new hero; re-derive
+            SplitScreen.ClearAbandoned();   // a new session gets a fresh try
         }
 
         /// <summary>Removes whichever player is holding this pad.</summary>

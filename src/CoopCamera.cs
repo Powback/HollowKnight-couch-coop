@@ -157,6 +157,23 @@ namespace HKCouchCoop
             var cam = __instance.cam;
             if (cam == null) return;
 
+            // Whatever this frame decides, the pane driver runs afterwards —
+            // and it is the thing that hands the camera back. Several paths
+            // below return early (co-op ended, a lock zone, the group not
+            // whole), and any one of them reached mid-split used to leave
+            // cam.enabled false, which is a black screen rather than a
+            // mis-framed one.
+            var tkCam = Tk2d;
+            var letterbox = tkCam != null ? tkCam.CameraSettings.rect : new Rect(0f, 0f, 1f, 1f);
+            try { Frame(__instance, cam, letterbox); }
+            finally
+            {
+                Guard.Run(() => SplitScreen.Draw(cam, __instance, letterbox), "Split draw");
+            }
+        }
+
+        private static void Frame(CameraController __instance, Camera cam, Rect letterbox)
+        {
             if (!CoopManager.Active)
             {
                 SplitScreen.Reset();
@@ -187,13 +204,10 @@ namespace HKCouchCoop
                 return;
             }
 
+            // Panes divide the letterbox, never the whole screen:
+            // ForceCameraAspect owns that rect and replacing it would undo the
+            // game's own aspect handling.
             var heroes = CoopManager.FramableHeroes.ToList();
-
-            // The letterbox tk2d is drawing inside. Panes divide THIS, never
-            // the whole screen: ForceCameraAspect owns it, and replacing it
-            // would undo the game's own aspect handling.
-            var tkCam = Tk2d;
-            var letterbox = tkCam != null ? tkCam.CameraSettings.rect : new Rect(0f, 0f, 1f, 1f);
             SplitScreen.Evaluate(heroes, cam, letterbox);
 
             if (heroes.Count < 2)
@@ -225,6 +239,105 @@ namespace HKCouchCoop
             }
 
             __instance.transform.position = new Vector3(_smoothed.x, _smoothed.y, current.z);
+        }
+
+        /// <summary>
+        /// Aim the camera at one pane's Knights, for that pane's shape.
+        ///
+        /// A pane is not the same shape as the screen, so its aspect is not
+        /// the camera's usual one — framing it with the full-screen aspect
+        /// would cut off exactly the axis the split was made along. The pane's
+        /// own width and height give the aspect to frame against.
+        /// </summary>
+        internal static void FramePane(Camera cam, CameraController cc, tk2dCamera tk,
+                                       Pane pane, float camZ)
+        {
+            if (cam == null || pane == null || pane.Knights.Count == 0) return;
+
+            var centre = pane.Centre;
+            var target = new Vector3(centre.x, centre.y, camZ);
+            cam.transform.position = cc != null ? cc.KeepWithinSceneBounds(target) : target;
+
+            if (tk == null || BaseFov <= 0f) return;
+
+            var planeZ = PlaneZ(pane.Knights);
+            var baseHalf = BaseHalfHeight(cam, planeZ);
+            if (baseHalf <= 0f) return;
+
+            // The pane's aspect, not the screen's: a half-width pane is half as
+            // wide for the same height, so it needs to zoom out further to hold
+            // the same horizontal spread.
+            var fov = PaneFov(cam, pane, camZ);
+            if (fov > 0.01f) tk.ZoomFactor = BaseFov / fov;
+        }
+
+        /// <summary>
+        /// Vertical field of view that holds one pane's Knights.
+        ///
+        /// A pane is not the shape of the screen, so it is framed against its
+        /// OWN aspect — a half-width pane is half as wide for the same height
+        /// and must open up further to hold the same horizontal spread.
+        /// Framing it with the full-screen aspect would crop away exactly the
+        /// axis the split was made along.
+        /// </summary>
+        internal static float PaneFov(Camera reference, Pane pane, float camZ)
+        {
+            if (reference == null || pane == null || pane.Knights.Count == 0) return -1f;
+            var planeZ = PlaneZ(pane.Knights);
+            var baseHalf = BaseHalfHeight(reference, planeZ);
+            if (baseHalf <= 0f) return -1f;
+
+            var aspect = pane.Viewport.height > 0f && Screen.height > 0
+                ? (Screen.width * pane.Viewport.width) / (Screen.height * pane.Viewport.height)
+                : reference.aspect;
+
+            var needed = Mathf.Clamp(
+                RequiredHalfHeight(pane.Knights, Mathf.Max(aspect, 0.01f)),
+                baseHalf,
+                MaxAllowedHalfHeight(reference, planeZ));
+
+            var dist = Mathf.Abs(camZ - planeZ);
+            if (dist <= 0.01f) return -1f;
+            return 2f * Mathf.Atan(needed / dist) * Mathf.Rad2Deg;
+        }
+
+        /// <summary>
+        /// Point a spare camera at one pane, borrowing everything about how
+        /// the game's own camera sees the world.
+        ///
+        /// Everything copied here is what makes the pane show the same world:
+        /// which layers it can see, how it clears, where its clip planes are,
+        /// and how it sorts transparency — a 2D game gets that last one wrong
+        /// very visibly. Its own fov comes from the pane's shape, and its
+        /// depth puts it after the game's camera so the draw order is defined
+        /// rather than incidental.
+        /// </summary>
+        internal static void ConfigurePaneCamera(Camera pane, Camera source,
+                                                 CameraController cc, Pane p, int index)
+        {
+            if (pane == null || source == null || p == null || p.Knights.Count == 0) return;
+
+            pane.rect = p.Viewport;
+            pane.cullingMask = source.cullingMask;
+            pane.clearFlags = source.clearFlags;
+            pane.backgroundColor = source.backgroundColor;
+            pane.nearClipPlane = source.nearClipPlane;
+            pane.farClipPlane = source.farClipPlane;
+            pane.orthographic = false;
+            pane.transparencySortMode = source.transparencySortMode;
+            pane.transparencySortAxis = source.transparencySortAxis;
+            pane.allowHDR = source.allowHDR;
+            pane.allowMSAA = source.allowMSAA;
+            pane.depth = source.depth + index;
+            pane.transform.rotation = source.transform.rotation;
+
+            var camZ = source.transform.position.z;
+            var centre = p.Centre;
+            var target = new Vector3(centre.x, centre.y, camZ);
+            pane.transform.position = cc != null ? cc.KeepWithinSceneBounds(target) : target;
+
+            var fov = PaneFov(source, p, camZ);
+            if (fov > 0.01f) pane.fieldOfView = fov;
         }
 
         /// <summary>Smallest box containing every Knight.</summary>
