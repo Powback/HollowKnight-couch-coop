@@ -116,6 +116,22 @@ namespace HKCouchCoop
             var active = actions.ActiveDevice;
             if (active == null || active == InputDevice.Null || !active.IsAttached) return;
             if (PadInput.Claimed.Contains(active)) return;   // that's an extra's pad
+
+            // A spare pad's Start press is deliberately left feeding player
+            // one's action set — that is what lets the pause interception see
+            // it. So the moment someone presses Start to join, InControl
+            // reports THEIR pad as the device driving player one, and adopting
+            // it here is self-defeating: StartJoin then treats the very pad
+            // asking to join as player one's reserved pad, refuses the join,
+            // and the press becomes an ordinary pause. Start-to-join could
+            // never succeed for a pad that was not already known.
+            //
+            // Player one is identified by playing, not by pressing Start:
+            // their pad is already latched from moving around. So a device
+            // that is not already player one's may not be adopted while it is
+            // holding Start.
+            if (!ReferenceEquals(active, _observedP1Pad) && StartJoin.StartHeld(active)) return;
+
             _observedP1Pad = active;
         }
 

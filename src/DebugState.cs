@@ -154,10 +154,17 @@ namespace HKCouchCoop
              .Add("health", pd != null ? pd.health : -1)
              .Add("healthBlue", pd != null ? pd.healthBlue : -1)
              .Add("maxHealth", pd != null ? pd.CurrentMaxHealth : -1)
-             .Add("soul", pd != null ? pd.MPCharge : -1)
-             .Add("device", (string)null)
-             .Add("deviceGuid", (string)null)
-             .Add("deviceIndex", -1);
+             .Add("soul", pd != null ? pd.MPCharge : -1);
+
+            // Which pad the mod believes is player one's. This used to be
+            // hardcoded null, which made the value that decides whether a Start
+            // press pauses or joins the one thing the channel could not show —
+            // so a Start-to-join failure looked identical whatever caused it.
+            // null here means player one is genuinely on keyboard.
+            var p1Device = Guard.Run(() => InputAssign.P1Device(), "P1 device");
+            j.Add("device", p1Device != null ? p1Device.Name : null)
+             .Add("deviceGuid", p1Device != null ? p1Device.GUID.ToString() : null)
+             .Add("deviceIndex", DeviceIndex(p1Device));
             return j.Close();
         }
 

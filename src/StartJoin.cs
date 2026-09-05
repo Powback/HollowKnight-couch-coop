@@ -46,7 +46,7 @@ namespace HKCouchCoop
                 return control != null && control.WasPressed;
             });
 
-        private static bool StartHeld(InputDevice d) =>
+        internal static bool StartHeld(InputDevice d) =>
             StartControls.Any(c =>
             {
                 var control = d.GetControl(c);
