@@ -161,6 +161,14 @@ derive their field of view from the pane's shape rather than the screen's. Unity
 draws enabled cameras with viewport rects at the right time, so there is no race
 with the frame loop to lose.
 
+Two things it deliberately is not, so nobody reads the code expecting them.
+The split is axis-aligned — vertical or horizontal, never diagonal — because a
+pane is a camera viewport rect and that is an axis-aligned rectangle; a
+rotating divider needs per-pane RenderTextures and a masking shader, which is
+the compositing path this design avoided. And it is not animated: panes appear
+and disappear in one frame. `SeamWidth` appears in the original plan and was
+never built.
+
 Three constraints are load-bearing:
 
 - **Uniform panes.** `DarknessCameraEffect` sizes its RenderTexture from

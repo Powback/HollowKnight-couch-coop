@@ -571,14 +571,36 @@ namespace HKCouchCoop
                 return;
             }
 
-            // Vanilla can still be moving player one for a few frames after it
-            // says he has arrived. Re-gather briefly so the party does not get
-            // left on the doorstep while he walks in.
-            if (_gatheredAtFrame > 0 && Time.frameCount - _gatheredAtFrame < 30)
+            // Vanilla can still be walking player one further into the room
+            // for a few frames after it says he has arrived, which would leave
+            // the party standing on the doorstep behind him. So for a short
+            // window afterwards, collect anyone who has been left BEHIND —
+            // and only them.
+            //
+            // Not an unconditional re-gather. GatherToP1 teleports, so doing
+            // it every frame of the window would overwrite a player's own
+            // movement thirty frames running: half a second after every door
+            // where you press right and do not move. Only a Knight further
+            // away than the doorstep gap gets pulled, so anyone already with
+            // the group keeps their input.
+            if (_gatheredAtFrame > 0)
             {
-                GatherToP1("settling after scene change");
-                if (Time.frameCount - _gatheredAtFrame >= 29) _gatheredAtFrame = 0;
-                CoopCamera.Reset();
+                var since = Time.frameCount - _gatheredAtFrame;
+                if (since >= 30)
+                {
+                    _gatheredAtFrame = 0;
+                    CoopCamera.Reset();   // once, at the end, so it can smooth again
+                }
+                else
+                {
+                    foreach (var e in Extras)
+                    {
+                        if (e.Hero == null) continue;
+                        var gap = Vector2.Distance(
+                            p1.transform.position, e.Hero.transform.position);
+                        if (gap > 12f) SnapTo(e.Hero, p1, e, "left on the doorstep");
+                    }
+                }
             }
 
             // Leash: pull a straggler back rather than softlocking — but zoom

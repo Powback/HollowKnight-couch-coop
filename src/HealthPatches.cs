@@ -98,47 +98,97 @@ namespace HKCouchCoop
     /// Shade for the others to fight, and player one dying is the real
     /// game-over it has always been, because player one is the save file.
     /// </summary>
-    [HarmonyPatch(typeof(DamageEnemies), "OnTriggerEnter2D")]
+    [HarmonyPatch(typeof(DamageEnemies), "FixedUpdate")]
     internal static class FriendlyFirePatch
     {
-        // Where the chain breaks, published rather than guessed at. A swing
-        // that lands nothing could be a nail that never triggered, a trigger
-        // that never saw a hero, or a hero this filter rejected — three very
-        // different bugs that look identical from "health unchanged".
-        internal static int Triggers;    // this patch ran at all
-        internal static int HeroSeen;    // the collider belonged to a Knight
+        // Where the chain breaks, published rather than guessed at.
+        internal static int Ticks;       // this patch ran on a Knight's nail
+        internal static int Overlaps;    // the nail was touching another Knight
         internal static int Hits;        // damage actually dealt
 
-        private static void Postfix(DamageEnemies __instance, Collider2D collision) =>
-            Guard.Run(() =>
+        // One hit per victim per swing, not one per physics step: vanilla
+        // re-damages every FixedUpdate while a target overlaps, which against
+        // a teammate standing on you is a mask per frame.
+        //
+        // Keyed by the individual damage box, NOT one shared set. Every
+        // DamageEnemies in the game shares this patch — other Knights' nails,
+        // and enemies' too, since KnightHatchling and StalactiteControl carry
+        // one — so a single set cleared on any disable would let one player's
+        // swing ending re-arm another player's swing against the same victim,
+        // and a falling stalactite could do it from across the room.
+        private static readonly Dictionary<int, HashSet<int>> HitThisSwing =
+            new Dictionary<int, HashSet<int>>();
+
+        private static HashSet<int> VictimsOf(int nailId)
+        {
+            HashSet<int> set;
+            if (!HitThisSwing.TryGetValue(nailId, out set))
             {
-                if (!Plugin.Cfg.FriendlyFire.Value || !CoopManager.Active) return;
-                if (__instance == null || !__instance.enabled || collision == null) return;
-                Triggers++;
+                set = new HashSet<int>();
+                HitThisSwing[nailId] = set;
+            }
+            return set;
+        }
 
-                var victim = collision.GetComponentInParent<HeroController>();
-                if (victim == null) return;
-                HeroSeen++;
+        /// <summary>This damage box was put away; its swing is over.</summary>
+        internal static void ClearSwing(int nailId) => HitThisSwing.Remove(nailId);
 
-                // Whose swing is this? A nail is a child of the Knight that
-                // threw it, so parentage is the attacker.
-                var attacker = __instance.GetComponentInParent<HeroController>();
-                if (attacker == null || ReferenceEquals(attacker, victim)) return;
+        private static void Postfix(DamageEnemies __instance) => Guard.Run(() =>
+        {
+            if (!Plugin.Cfg.FriendlyFire.Value || !CoopManager.Active) return;
+            if (__instance == null || !__instance.isActiveAndEnabled) return;
 
-                // Only Knights this mod knows about. Anything else wearing a
-                // HeroController is not ours to damage.
-                if (!ReferenceEquals(victim, CoopManager.PlayerOne)
-                    && !CoopManager.IsExtra(victim)) return;
+            var attacker = __instance.GetComponentInParent<HeroController>();
+            if (attacker == null) return;          // not a Knight's attack
+            var damage = __instance.damageDealt;
+            if (damage <= 0) return;
 
-                var damage = __instance.damageDealt;
-                if (damage <= 0) return;
+            var nail = __instance.GetComponent<Collider2D>();
+            if (nail == null || !nail.enabled) return;
+            Ticks++;
+
+            var alreadyHit = VictimsOf(__instance.GetInstanceID());
+            foreach (var victim in CoopManager.AllHeroes)
+            {
+                if (victim == null || ReferenceEquals(victim, attacker)) continue;
+                var id = victim.GetInstanceID();
+                if (alreadyHit.Contains(id)) continue;
+
+                // Collider2D.Distance, NOT IsTouching or a trigger callback.
+                // Trigger events and IsTouching both go through the physics
+                // layer matrix, and nail-versus-hero is disabled there — which
+                // is exactly why a swing passes through a teammate and why
+                // hanging this on OnTriggerEnter2D produced no hits at all.
+                // Distance measures the geometry whatever the matrix says.
+                var touching = false;
+                foreach (var vc in victim.GetComponents<Collider2D>())
+                {
+                    if (vc == null || !vc.enabled) continue;
+                    if (nail.Distance(vc).isOverlapped) { touching = true; break; }
+                }
+                if (!touching) continue;
+                Overlaps++;
 
                 var side = attacker.transform.position.x <= victim.transform.position.x
                     ? GlobalEnums.CollisionSide.left
                     : GlobalEnums.CollisionSide.right;
 
+                // Their TakeDamage, so the pool swap puts it on THEIR health,
+                // their invulnerability applies, and their death is their own.
                 victim.TakeDamage(__instance.gameObject, side, damage, hazardType: 0);
+                alreadyHit.Add(id);
                 Hits++;
-            }, "Friendly fire");
+            }
+        }, "Friendly fire");
+    }
+
+    /// <summary>A swing ends when the nail's damage box is put away.</summary>
+    [HarmonyPatch(typeof(DamageEnemies), "OnDisable")]
+    internal static class FriendlyFireSwingEndPatch
+    {
+        private static void Postfix(DamageEnemies __instance) => Guard.Run(() =>
+        {
+            if (__instance != null) FriendlyFirePatch.ClearSwing(__instance.GetInstanceID());
+        }, "Friendly fire swing end");
     }
 }

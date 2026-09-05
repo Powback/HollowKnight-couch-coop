@@ -172,6 +172,18 @@ one pane per Knight, up to four — along the axis they are actually separated
 on, and becomes one view again when they regroup. Zoom happens first: the view
 widens to hold everyone and only splits once it cannot stretch any further.
 
+The split is **axis-aligned**: a vertical cut or a horizontal one, whichever
+axis the Knights are further apart on. It does not rotate to follow the line
+between them — no diagonal splits — because a pane is a camera viewport, and a
+viewport is a rectangle. A rotating divider would need each pane rendered to
+its own texture and composited through a shader that masks along an arbitrary
+line.
+
+It is also not animated. The screen changes between one view and two in a
+single frame; there is no sliding divider and no cross-fade. The split and
+merge thresholds differ so a group sitting on the boundary cannot flicker, but
+the change itself is a hard cut.
+
 Panes are always the same size as each other. That is a rendering constraint
 rather than a preference: the game's darkness pass sizes its render texture
 from the camera's pixel dimensions and rebuilds it whenever they change, so
