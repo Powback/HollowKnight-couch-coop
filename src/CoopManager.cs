@@ -568,9 +568,10 @@ namespace HKCouchCoop
                 var cc = GameCameras.instance != null ? GameCameras.instance.cameraController : null;
                 if (cc != null && cc.lockZoneList != null && cc.lockZoneList.Count > 0) return;
 
-                var needed = CoopCamera.RequiredSize(heroes, cam);
-                var allowed = CoopCamera.MaxAllowedSize(cam);
-                if (allowed <= 0f) return;               // uninitialized — never snap on nonsense
+                // World half-heights, not orthographic sizes: this camera is
+                // perspective and its orthographicSize is an inert 480, which
+                // used to make both numbers 480 and this test never true.
+                if (!CoopCamera.Framing(heroes, cam, out var needed, out var allowed, out _, out _)) return;
                 if (needed <= allowed * 1.15f) return;   // camera can (nearly) frame it
 
                 foreach (var e in Extras)

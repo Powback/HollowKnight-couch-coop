@@ -31,6 +31,10 @@
       <HintPath>$(GameRefs)/Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="TeamCherry.TK2D">
+      <HintPath>$(GameRefs)/TeamCherry.TK2D.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(GameRefs)/UnityEngine.dll</HintPath>
       <Private>false</Private>

@@ -182,6 +182,20 @@ v0.6.9 ("defeat Steam Input device twins for keyboard-declared player one")
 addressed this, and the probe now measures 1:1. If per-player input misbehaves
 with *real* controllers, read `/devices` first — the twin count is right there.
 
+**Steam's launch can wedge, and it looks exactly like a broken mod.** Twice in
+one session `steam -applaunch` was accepted, no game process ever appeared, and
+the rig reported `ERR launch / the game did not become testable in time` after
+180s. The evidence is only in Steam's own logs — `GameAction ... LaunchApp
+changed task to X` in `~/.local/share/Steam/logs/console_log.txt`, with the
+depot side in `content_log.txt`. It stalled at `DownloadingDepots` once (with
+the depot check already finished cleanly, `No Error`) and at
+`SynchronizingCloud` once. The cloud one is probably self-inflicted: this rig
+backs up `user*.dat*` before a run and restores them after, so Steam Cloud sees
+the saves change and then revert. Recovery, which works: `steam -shutdown`,
+wait for the process to go, relaunch (`steam -silent`), wait for
+`steamwebhelper`. Before blaming the mod for a launch error, read the
+GameAction lines.
+
 **Steam must be running**; the harness starts it if not, and launches through
 `steam -applaunch 367520` so the run uses the same Proton and launch options a
 player uses. Hollow Knight needs `WINEDLLOVERRIDES="winhttp=n,b"` in its launch
@@ -197,8 +211,7 @@ puts them back afterwards, including when the run fails.
 
 ## Known state
 
-**11 of 11 passing** against HKCouchCoop **v0.7.11**, 2026-09-05 — the first
-all-green run, and the first run of any kind in the real couch configuration.
+**12 of 12 passing** against HKCouchCoop **v0.7.12**, 2026-09-05.
 
 That run is the whole argument for this rig. Everything past v0.7.2 had been
 written, reviewed, built and deployed without ever executing; the first three
@@ -214,12 +227,29 @@ attempts found, in order:
   which is what every earlier run used.
 * **Two defects in this rig**, both of which blamed the mod: comparing x across
   a room transition, and pressing Start during one.
+* **AutoZoom and the Screen leash had never worked at all** (fixed in v0.7.12).
+  Hollow Knight's world camera is perspective — tk2dCamera drives it as
+  `fieldOfView / ZoomFactor` and calls `ResetProjectionMatrix` — so the
+  `cam.orthographicSize` the mod wrote its zoom into was an inert leftover
+  reading 480. That number also dwarfed every real distance, which pinned the
+  leash's "the camera cannot frame this" test to permanently false. Two
+  features, dead in every released build, and nothing said so. Found by adding
+  a camera block to the state channel and *measuring* rather than reading the
+  decompile, which implements both projection paths and settles nothing.
 
 The v0.7.2 numbers this section used to carry (6 of 9, with player two never
 moving) are superseded. They were taken with keyboard-player-one and predate
 the three-pad rewrite.
 
-Confirmed against the running game for the first time: Start-to-join,
+The rig also learned to stand on still ground: holds are retaken if the room
+changed under them, Start presses wait for `GameState.PLAYING`, measurements
+wait for every Knight to stop drifting, and repositioning walks to the middle
+of the room using the channel's `sceneWidth` rather than guessing a direction
+and a duration — three earlier attempts at that guessed wrong and merely
+changed which wall got hit.
+
+Confirmed against the running game for the first time: camera zoom,
+Start-to-join,
 hold-Start-to-leave, per-Knight health pools, player one keeping his own pad
 once a clone exists, a third pad joining, and 1:1 device mapping with no Steam
 Input twins.

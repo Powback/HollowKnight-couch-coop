@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using CoopKit;
 using InControl;
@@ -127,6 +128,13 @@ namespace HKCouchCoop
                 .Add("time", Time.unscaledTime)
                 .Add("frame", Time.frameCount)
                 .Add("scene", SceneName())
+                // Room extents. Hollow Knight authors every room from the world
+                // origin, so x runs 0..sceneWidth — which lets a test walk a
+                // Knight to the middle of the room it is in, instead of guessing
+                // a direction and a duration and hoping it does not cross a
+                // transition mid-measurement.
+                .Add("sceneWidth", gm != null ? gm.sceneWidth : -1f)
+                .Add("sceneHeight", gm != null ? gm.sceneHeight : -1f)
                 .Add("gameState", gm != null ? gm.gameState.ToString() : null)
                 .Add("paused", gm != null && gm.gameState == GlobalEnums.GameState.PAUSED)
                 .Add("inGameplay", gm != null && gm.gameState == GlobalEnums.GameState.PLAYING)
@@ -135,8 +143,64 @@ namespace HKCouchCoop
                 .Add("extraCount", CoopManager.PlayerCount - 1)
                 .Add("lastJoinRejection", CoopManager.LastJoinRejection)
                 .AddRaw("players", Json.Array(players))
+                .AddRaw("camera", CameraJson())
                 .AddRaw("devices", DevicesArray())
                 .Close();
+        }
+
+        /// <summary>
+        /// What the world camera actually is, and how it is actually zoomed.
+        ///
+        /// Not decoration: tk2dCamera drives a PERSPECTIVE camera through
+        /// fieldOfView / ZoomFactor and calls ResetProjectionMatrix, in which
+        /// case orthographicSize is inert and any zoom written to it does
+        /// nothing at all. CoopCamera writes orthographicSize. Which path this
+        /// game takes cannot be read off the decompile — vanilla implements
+        /// both — so it is measured here rather than assumed.
+        /// </summary>
+        private static string CameraJson()
+        {
+            var j = Json.Object();
+            try
+            {
+                var cams = GameCameras.instance;
+                var cam = cams != null ? cams.mainCamera : null;
+                if (cam == null) { j.Add("present", false); return j.Close(); }
+
+                var r = cam.rect;
+                j.Add("present", true)
+                 .Add("orthographic", cam.orthographic)
+                 .Add("orthographicSize", cam.orthographicSize)
+                 .Add("fieldOfView", cam.fieldOfView)
+                 .Add("aspect", cam.aspect)
+                 .Add("pixelWidth", cam.pixelWidth)
+                 .Add("pixelHeight", cam.pixelHeight)
+                 .AddRaw("rect", Json.Object().Add("x", r.x).Add("y", r.y)
+                     .Add("w", r.width).Add("h", r.height).Close());
+
+                // The framing decision itself, so a test can distinguish a
+                // camera that would not widen from a group that never asked.
+                var heroes = CoopManager.FramableHeroes.ToList();
+                if (heroes.Count >= 2 && CoopCamera.Framing(
+                        heroes, cam, out var needed, out var allowed,
+                        out var baseHalf, out var current))
+                {
+                    j.Add("neededHalfHeight", needed)
+                     .Add("allowedHalfHeight", allowed)
+                     .Add("baseHalfHeight", baseHalf)
+                     .Add("currentHalfHeight", current);
+                }
+
+                var tk = cams.tk2dCam;
+                if (tk != null)
+                {
+                    j.Add("tk2dZoomFactor", tk.ZoomFactor)
+                     .Add("tk2dSettingsFov", tk.CameraSettings.fieldOfView)
+                     .Add("tk2dProjection", tk.CameraSettings.projection.ToString());
+                }
+            }
+            catch (System.Exception e) { j.Add("error", e.Message); }
+            return j.Close();
         }
 
         private static string SceneName()
