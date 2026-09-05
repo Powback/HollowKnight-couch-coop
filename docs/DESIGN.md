@@ -172,6 +172,17 @@ Three constraints are load-bearing:
 - **Panes divide the letterbox**, never the whole screen: `ForceCameraAspect`
   owns that rect.
 
+Lock zones (boss arenas) do NOT stop a split. For one view they win — the
+players are confined there anyway and the framing is authored — but a boss
+fight with a player off-screen is exactly the case split-screen exists for, so
+panes clamp to the lock's own limits (`xLockMin`/`xLockMax`/`yLockMin`/
+`yLockMax`, which are different fields from the scene bounds) rather than
+standing down. The arena still bounds what each pane shows. The risk taken
+knowingly: this overrides framing the game deliberately authored, and a boss
+FSM that assumes a particular view may behave oddly. `SplitScreen = false`
+restores the authored framing. The screen leash still stands down inside locks,
+as it always did.
+
 The screen-mode leash stands down when split-screen is on. Both fire on the
 identical "the view cannot hold the group" condition, so while the leash was
 newly working it yanked stragglers together a frame before the screen would

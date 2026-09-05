@@ -159,7 +159,10 @@ Things that intentionally end or suspend the co-op session:
   screen or another save file.
 - **Unplugging a pad removes its player** immediately.
 - **Camera lock zones (boss arenas) suspend the co-op camera** — the game's own
-  framing wins inside them, and takes back over when the lock releases.
+  framing wins inside them, and takes back over when the lock releases. Split
+  screen is the exception: an arena is where being off-screen hurts most, so
+  the screen still divides there, with each pane held inside the arena's own
+  bounds.
 
 ## Split-screen
 

@@ -196,19 +196,23 @@ namespace HKCouchCoop
             // fight. BaseFov now reads tk2d's settings live, so no early
             // return can leave it uninitialised and no resize can stale it.
 
-            // A lock zone means the game is deliberately constraining the view.
-            if (__instance.lockZoneList != null && __instance.lockZoneList.Count > 0)
-            {
-                _hasSmoothed = false;   // re-snap when the lock releases
-                SplitScreen.Reset();    // panes inside locks are Phase 3 work
-                return;
-            }
-
             // Panes divide the letterbox, never the whole screen:
             // ForceCameraAspect owns that rect and replacing it would undo the
             // game's own aspect handling.
             var heroes = CoopManager.FramableHeroes.ToList();
             SplitScreen.Evaluate(heroes, cam, letterbox);
+
+            // A lock zone constrains the view deliberately, and for ONE view
+            // that wins — the players are confined there anyway. It does not
+            // win over a split: a boss fight with a player off-screen is
+            // unplayable, which is the case split-screen exists for. Panes
+            // clamp to the lock instead (see ClampForView), so the arena still
+            // bounds what each one shows.
+            if (__instance.lockZoneList != null && __instance.lockZoneList.Count > 0)
+            {
+                _hasSmoothed = false;   // re-snap when the lock releases
+                return;                 // Draw still runs, from the finally
+            }
 
             if (heroes.Count < 2)
             {
@@ -256,7 +260,7 @@ namespace HKCouchCoop
 
             var centre = pane.Centre;
             var target = new Vector3(centre.x, centre.y, camZ);
-            cam.transform.position = cc != null ? cc.KeepWithinSceneBounds(target) : target;
+            cam.transform.position = ClampForView(cc, target);
 
             if (tk == null || BaseFov <= 0f) return;
 
@@ -280,6 +284,28 @@ namespace HKCouchCoop
         /// Framing it with the full-screen aspect would crop away exactly the
         /// axis the split was made along.
         /// </summary>
+        /// <summary>
+        /// Keep a pane's view where the game allows one.
+        ///
+        /// Inside a CameraLockArea the game is deliberately constraining the
+        /// view, and its limits live in different fields from the scene's —
+        /// KeepWithinSceneBounds clamps to the ROOM, which inside an arena is
+        /// far wider than the lock permits. Splitting inside locks was a
+        /// deliberate choice (a boss fight with a player off-screen is
+        /// unplayable), so panes go where the lock allows rather than standing
+        /// down entirely.
+        /// </summary>
+        internal static Vector3 ClampForView(CameraController cc, Vector3 target)
+        {
+            if (cc == null) return target;
+            if (cc.lockZoneList != null && cc.lockZoneList.Count > 0)
+                return new Vector3(
+                    Mathf.Clamp(target.x, cc.xLockMin, Mathf.Max(cc.xLockMin, cc.xLockMax)),
+                    Mathf.Clamp(target.y, cc.yLockMin, Mathf.Max(cc.yLockMin, cc.yLockMax)),
+                    target.z);
+            return cc.KeepWithinSceneBounds(target);
+        }
+
         internal static float PaneFov(Camera reference, Pane pane, float camZ)
         {
             if (reference == null || pane == null || pane.Knights.Count == 0) return -1f;
@@ -334,7 +360,7 @@ namespace HKCouchCoop
             var camZ = source.transform.position.z;
             var centre = p.Centre;
             var target = new Vector3(centre.x, centre.y, camZ);
-            pane.transform.position = cc != null ? cc.KeepWithinSceneBounds(target) : target;
+            pane.transform.position = ClampForView(cc, target);
 
             var fov = PaneFov(source, p, camZ);
             if (fov > 0.01f) pane.fieldOfView = fov;
