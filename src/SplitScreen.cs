@@ -144,6 +144,26 @@ namespace HKCouchCoop
                 Freeze.Frozen = true;   // tk2d must not reclaim the viewport
                 _driving = true;
 
+                // Rotating split: a different way of reaching the screen, so
+                // it either takes over completely or does not run at all.
+                if (Plugin.Cfg.SplitRotate.Value && _panes.Count >= 2
+                    && _panes.Count <= 4 && SplitCompositor.Available)
+                {
+                    EnsurePaneCameras(cam);
+                    if (SplitCompositor.Draw(cam, cc, _panes, _extra))
+                    {
+                        // Switch off only the cameras this layout does NOT use.
+                        // The compositor drives _extra[0..panes-2]; starting at
+                        // 1 switched off ones it had just enabled, so panes 2
+                        // and 3 painted from a texture nothing had rendered.
+                        for (var i = _panes.Count - 1; i < _extra.Count; i++)
+                            _extra[i].gameObject.SetActive(false);
+                        _failures = 0;
+                        return;
+                    }
+                }
+                SplitCompositor.Release(_extra, cam);
+
                 // Pane 0 is the game's own camera, framed and cropped in place.
                 cam.rect = _panes[0].Viewport;
                 CoopCamera.FramePane(cam, cc, tk, _panes[0], cam.transform.position.z);
@@ -202,6 +222,7 @@ namespace HKCouchCoop
             if (!_driving) return;
             _driving = false;
             Freeze.Frozen = false;
+            SplitCompositor.Release(_extra, cam);   // hands the screen back
             cam.rect = letterbox;
             cam.enabled = true;
             foreach (var c in _extra)
@@ -322,7 +343,24 @@ namespace HKCouchCoop
             var j = Json.Object()
                 .Add("active", Active)
                 .Add("abandoned", _abandoned)
-                .Add("paneCount", _panes.Count);
+                .Add("paneCount", _panes.Count)
+                .Add("rotating", SplitCompositor.Active)
+                .Add("rotateNormalX", SplitCompositor.Normal.x)
+                .Add("rotateNormalY", SplitCompositor.Normal.y)
+                // In rotating mode the pane rects below are NOT what is drawn —
+                // the screen is cut into regions around these sites instead. Say
+                // so, so nothing reads a rectangle that describes nothing.
+                .Add("paneRectsApply", !SplitCompositor.Active)
+                .Add("regionAspect", SplitCompositor.Aspect);
+
+            if (SplitCompositor.Active)
+            {
+                var sites = new List<string>();
+                foreach (var st in SplitCompositor.RegionSites)
+                    sites.Add(Json.Object().Add("x", st.x).Add("y", st.y).Close());
+                j.AddRaw("regionSites", Json.Array(sites));
+            }
+
             var panes = new List<string>();
             foreach (var p in _panes)
             {

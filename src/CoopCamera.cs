@@ -348,6 +348,32 @@ namespace HKCouchCoop
             return target;
         }
 
+        /// <summary>
+        /// Frame a pane across the WHOLE screen, for the rotating split.
+        ///
+        /// There the camera is not cropped to a slice — it renders everything
+        /// and a polygon decides what is shown — so it frames against the full
+        /// screen aspect. Using a pane aspect here would zoom differently from
+        /// what is displayed and the two halves would disagree at the seam.
+        /// </summary>
+        internal static void FramePaneFullScreen(Camera cam, CameraController cc,
+                                                 Pane pane, float camZ)
+        {
+            if (cam == null || pane == null || pane.Knights.Count == 0) return;
+
+            // Work out the view FIRST, then place the camera using it. Placing
+            // it against last frame's fov decides "would this Knight fall out
+            // of frame" from the wrong frame size.
+            var fov = FovFor(pane.Knights, cam, camZ, cam.aspect, clamp: true);
+            var tk = Tk2d;
+            if (tk != null && BaseFov > 0f && fov > 0.01f) tk.ZoomFactor = BaseFov / fov;
+
+            var centre = pane.Centre;
+            cam.transform.position = ClampKeepingKnights(
+                cc, new Vector3(centre.x, centre.y, camZ), pane, cam,
+                fov > 0.01f ? fov : cam.fieldOfView, camZ);
+        }
+
         internal static float PaneFov(Camera reference, Pane pane, float camZ)
         {
             if (pane == null) return -1f;

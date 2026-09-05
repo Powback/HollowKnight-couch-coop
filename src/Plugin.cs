@@ -28,6 +28,7 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<bool> CameraZoom;
         internal readonly ConfigEntry<bool> FriendlyFire;
         internal readonly ConfigEntry<bool> SplitScreen;
+        internal readonly ConfigEntry<bool> SplitRotate;
         internal readonly ConfigEntry<float> SplitMergeMargin;
         internal readonly ConfigEntry<float> MaxZoomFactor;
         internal readonly ConfigEntry<float> ZoomMargin;
@@ -88,6 +89,11 @@ namespace HKCouchCoop
                 "Let Knights hurt each other. Full damage, including the killing blow — an " +
                 "extra who dies leaves a Shade for the others to fight, and player one dying " +
                 "is a real game-over. Off by default: it changes the game a lot.");
+            SplitRotate = f.Bind("Camera", "SplitRotate", false,
+                "Let the split follow where the players actually are, instead of only cutting " +
+                "straight down or straight across: two players get a divider at any angle, " +
+                "three or four get wedges that pivot as they move. Off by default: it changes " +
+                "how the game reaches the screen, and the plain split is the verified one.");
             SplitScreen = f.Bind("Camera", "SplitScreen", true,
                 "Divide the screen when the Knights spread further than one view can hold, " +
                 "and merge it back when they regroup. One pane per Knight, up to four.");

@@ -158,6 +158,16 @@ namespace HKCouchCoop
                     Get = () => c.SplitScreen.Value ? 1 : 0,
                     Set = i => c.SplitScreen.Value = i == 1,
                 },
+                new Row
+                {
+                    // Straight = the verified viewport split, only | and —.
+                    // Follow Players tilts the divider to match where they
+                    // actually stand, which needs a different rendering path.
+                    Label = "Split Angle",
+                    Options = new[] { "Straight", "Follow Players" },
+                    Get = () => c.SplitRotate.Value ? 1 : 0,
+                    Set = i => c.SplitRotate.Value = i == 1,
+                },
             };
         }
 

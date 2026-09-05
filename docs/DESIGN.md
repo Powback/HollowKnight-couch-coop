@@ -161,7 +161,26 @@ derive their field of view from the pane's shape rather than the screen's. Unity
 draws enabled cameras with viewport rects at the right time, so there is no race
 with the frame loop to lose.
 
-Two things it deliberately is not, so nobody reads the code expecting them.
+There are two rendering paths. The default one makes each pane a camera
+viewport, which is why its cuts are only `|` and `—`: a viewport is an
+axis-aligned rectangle. `SplitRotate` swaps to a second path where every camera
+renders the WHOLE screen into its own RenderTexture and the screen is then
+painted from those textures through polygons — so a boundary can be any line.
+Each Knight owns a Voronoi cell (everywhere closer to them than to any other
+Knight), which for two players is a single divider at whatever angle they stand
+and for three or four is wedges that pivot as they move. Cells are computed in
+aspect-corrected space, or they look skewed, since a pixel across is not the
+same distance as a pixel up.
+
+It borrows a shader — `Unlit/Texture` and fallbacks — because a BepInEx plugin
+cannot compile ShaderLab at runtime, and reports itself unavailable rather than
+half-working if none is present. It is off by default and takes over completely
+or not at all: the viewport path is verified, this one changes how the game
+reaches the screen, and doing that on reasoning alone previously produced a
+black world behind an intact HUD.
+
+Two things the DEFAULT path deliberately is not, so nobody reads it expecting
+them.
 The split is axis-aligned — vertical or horizontal, never diagonal — because a
 pane is a camera viewport rect and that is an axis-aligned rectangle; a
 rotating divider needs per-pane RenderTextures and a masking shader, which is
