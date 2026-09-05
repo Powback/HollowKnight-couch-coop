@@ -197,16 +197,30 @@ puts them back afterwards, including when the run fails.
 
 ## Known state
 
-The last recorded runs were against **v0.7.2** with the *old* keyboard-player-one
-configuration, 6 of 9 cases passing:
+**11 of 11 passing** against HKCouchCoop **v0.7.11**, 2026-09-05 — the first
+all-green run, and the first run of any kind in the real couch configuration.
 
-* FAIL — *player two moves on its own pad*: player two moved `+0.00` world
-  units over a 1.5s right-hold. The pad is enumerated, maps to its own device,
-  and the same pad's Start press spawns the player correctly — so input reaches
-  the mod but not the clone's movement.
-* FAIL — *a second pad joins as player three*.
-* FAIL — *holding Start removes a player*.
+That run is the whole argument for this rig. Everything past v0.7.2 had been
+written, reviewed, built and deployed without ever executing; the first three
+attempts found, in order:
 
-Those numbers predate the three-pad rewrite and should be re-taken. Re-run
-before acting on them; the mod moved 0.6.8 → 0.7.2 during testing, and the
-configuration the rig uses has since changed to the real couch layout.
+* **A wedged Steam launch.** `LaunchApp` stuck at `DownloadingDepots` with the
+  depot check already finished cleanly. Nothing to do with the mod, and
+  indistinguishable from a broken mod without Steam's own logs.
+* **Start-to-join could never work for an unknown pad** (fixed in v0.7.11). A
+  spare pad's Start is deliberately left feeding player one's action set, so
+  the press made InControl report *that* pad as player one's, and the mod then
+  refused the join and paused instead. Invisible under keyboard-player-one,
+  which is what every earlier run used.
+* **Two defects in this rig**, both of which blamed the mod: comparing x across
+  a room transition, and pressing Start during one.
+
+The v0.7.2 numbers this section used to carry (6 of 9, with player two never
+moving) are superseded. They were taken with keyboard-player-one and predate
+the three-pad rewrite.
+
+Confirmed against the running game for the first time: Start-to-join,
+hold-Start-to-leave, per-Knight health pools, player one keeping his own pad
+once a clone exists, a third pad joining, and 1:1 device mapping with no Steam
+Input twins.
+
