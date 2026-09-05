@@ -145,6 +145,12 @@ namespace HKCouchCoop
                 .AddRaw("players", Json.Array(players))
                 .AddRaw("camera", CameraJson())
                 .AddRaw("split", SplitScreen.LayoutJson())
+                .AddRaw("friendlyFire", Json.Object()
+                    .Add("enabled", Plugin.Cfg.FriendlyFire.Value)
+                    .Add("triggers", FriendlyFirePatch.Triggers)
+                    .Add("heroSeen", FriendlyFirePatch.HeroSeen)
+                    .Add("hits", FriendlyFirePatch.Hits)
+                    .Close())
                 .AddRaw("devices", DevicesArray())
                 .Close();
         }
@@ -393,6 +399,10 @@ namespace HKCouchCoop
                     if (!float.TryParse(raw, out var ld)) break;
                     j.Add("was", c.LeashDistance.Value); c.LeashDistance.Value = ld;
                     return j.Add("ok", true).Add("now", ld).Close();
+                case "FriendlyFire":
+                    if (!bool.TryParse(raw, out var ff)) break;
+                    j.Add("was", c.FriendlyFire.Value); c.FriendlyFire.Value = ff;
+                    return j.Add("ok", true).Add("now", ff).Close();
                 case "SplitScreen":
                     if (!bool.TryParse(raw, out var ss)) break;
                     j.Add("was", c.SplitScreen.Value); c.SplitScreen.Value = ss;
@@ -400,7 +410,7 @@ namespace HKCouchCoop
                 default:
                     return j.Add("ok", false)
                         .Add("error", "key not allowlisted")
-                        .Add("accepts", "MaxZoomFactor|SplitMergeMargin|LeashDistance|SplitScreen")
+                        .Add("accepts", "MaxZoomFactor|SplitMergeMargin|LeashDistance|SplitScreen|FriendlyFire")
                         .Close();
             }
             return j.Add("ok", false).Add("error", "could not parse '" + raw + "'").Close();

@@ -94,12 +94,24 @@ namespace HKCouchCoop
                 if (p1 == null) yield break;
                 yield return p1;
 
+                // Mid-transition nobody is anywhere meaningful yet.
+                if (_sceneChangePending) yield break;
+
                 var anchor = p1.transform.position;
                 foreach (var e in Extras)
                 {
                     var h = e.Hero;
-                    if (h == null || !h.isHeroInPosition) continue;
-                    // Parked or otherwise nowhere near the room: not framable.
+                    if (h == null) continue;
+
+                    // NOT isHeroInPosition. That flag is set by vanilla's entry
+                    // sequence, which GameManager runs for hero_ctrl alone —
+                    // player one. An extra never goes through it, so the flag
+                    // holds whatever it happened to hold, and an extra whose
+                    // copy read false was invisible to the camera forever: no
+                    // centring, no zoom, no split, with the players plainly
+                    // both in the room. What it was really standing in for is
+                    // "parked out of the room", so test that directly.
+                    if (h.transform.position.y < -1000f) continue;
                     if ((h.transform.position - anchor).sqrMagnitude > 400f * 400f) continue;
                     yield return h;
                 }
@@ -497,6 +509,7 @@ namespace HKCouchCoop
         }
 
         private static bool _extrasFrozen;
+        private static int _gatheredAtFrame;
 
         /// <summary>
         /// When the game takes control from player one (dialogue, cutscenes,
@@ -536,13 +549,36 @@ namespace HKCouchCoop
 
             if (_sceneChangePending)
             {
-                if (p1.isHeroInPosition)
-                {
-                    GatherToP1("scene change");
-                    CoopCamera.Reset();   // snap to the new room, don't sweep across it
-                    _sceneChangePending = false;
-                }
+                // Wait for vanilla to finish walking player one in, then put
+                // everyone on the same doorstep. Extras do not take part in the
+                // transition at all — no LeaveScene, no EnterScene — so without
+                // this they keep the coordinates they had in the PREVIOUS room,
+                // which is how a party ends up spread between a room's top and
+                // bottom entrances having walked through one door.
+                if (!p1.isHeroInPosition) return;
+
+                GatherToP1("scene change");
+
+                // Hand them the flag vanilla would have set if they had been
+                // through the entry sequence. Other systems read it, and an
+                // extra that never enters a scene never gets it back.
+                foreach (var e in Extras)
+                    if (e.Hero != null) e.Hero.isHeroInPosition = true;
+
+                CoopCamera.Reset();   // snap to the new room, don't sweep across it
+                _gatheredAtFrame = Time.frameCount;
+                _sceneChangePending = false;
                 return;
+            }
+
+            // Vanilla can still be moving player one for a few frames after it
+            // says he has arrived. Re-gather briefly so the party does not get
+            // left on the doorstep while he walks in.
+            if (_gatheredAtFrame > 0 && Time.frameCount - _gatheredAtFrame < 30)
+            {
+                GatherToP1("settling after scene change");
+                if (Time.frameCount - _gatheredAtFrame >= 29) _gatheredAtFrame = 0;
+                CoopCamera.Reset();
             }
 
             // Leash: pull a straggler back rather than softlocking — but zoom

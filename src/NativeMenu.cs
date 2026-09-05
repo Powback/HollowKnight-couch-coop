@@ -135,6 +135,13 @@ namespace HKCouchCoop
                 },
                 new Row
                 {
+                    Label = "Friendly Fire",
+                    Options = new[] { "Off", "On" },
+                    Get = () => c.FriendlyFire.Value ? 1 : 0,
+                    Set = i => c.FriendlyFire.Value = i == 1,
+                },
+                new Row
+                {
                     Label = "Group Camera Zoom",
                     Options = new[] { "Off", "On" },
                     Get = () => c.CameraZoom.Value ? 1 : 0,

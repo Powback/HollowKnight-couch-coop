@@ -1,3 +1,4 @@
+using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -73,5 +74,71 @@ namespace HKCouchCoop
             __state?.End();
             return __exception;
         }
+    }
+}
+
+namespace HKCouchCoop
+{
+    /// <summary>
+    /// Friendly fire: let a Knight's nail hurt another Knight.
+    ///
+    /// This cannot happen by accident, which is worth knowing before reading
+    /// the patch. A nail's DamageEnemies collects colliders in
+    /// OnTriggerEnter2D and explicitly drops layer 9 — the hero layer — so a
+    /// Knight is never even recorded as a target. And the damage it would deal
+    /// goes through HitTaker to an IHitResponder, which heroes do not have:
+    /// they take damage through HeroController.TakeDamage instead. Two
+    /// independent reasons a swing passes straight through a teammate.
+    ///
+    /// So the hit is dealt here, directly, on entry rather than every
+    /// FixedUpdate — a swing should cost one mask, not one per frame of
+    /// overlap. It routes through the victim's own TakeDamage, which means the
+    /// existing pool swap puts it on THEIR health, their invulnerability
+    /// frames apply, and their death runs their own death: an extra leaves a
+    /// Shade for the others to fight, and player one dying is the real
+    /// game-over it has always been, because player one is the save file.
+    /// </summary>
+    [HarmonyPatch(typeof(DamageEnemies), "OnTriggerEnter2D")]
+    internal static class FriendlyFirePatch
+    {
+        // Where the chain breaks, published rather than guessed at. A swing
+        // that lands nothing could be a nail that never triggered, a trigger
+        // that never saw a hero, or a hero this filter rejected — three very
+        // different bugs that look identical from "health unchanged".
+        internal static int Triggers;    // this patch ran at all
+        internal static int HeroSeen;    // the collider belonged to a Knight
+        internal static int Hits;        // damage actually dealt
+
+        private static void Postfix(DamageEnemies __instance, Collider2D collision) =>
+            Guard.Run(() =>
+            {
+                if (!Plugin.Cfg.FriendlyFire.Value || !CoopManager.Active) return;
+                if (__instance == null || !__instance.enabled || collision == null) return;
+                Triggers++;
+
+                var victim = collision.GetComponentInParent<HeroController>();
+                if (victim == null) return;
+                HeroSeen++;
+
+                // Whose swing is this? A nail is a child of the Knight that
+                // threw it, so parentage is the attacker.
+                var attacker = __instance.GetComponentInParent<HeroController>();
+                if (attacker == null || ReferenceEquals(attacker, victim)) return;
+
+                // Only Knights this mod knows about. Anything else wearing a
+                // HeroController is not ours to damage.
+                if (!ReferenceEquals(victim, CoopManager.PlayerOne)
+                    && !CoopManager.IsExtra(victim)) return;
+
+                var damage = __instance.damageDealt;
+                if (damage <= 0) return;
+
+                var side = attacker.transform.position.x <= victim.transform.position.x
+                    ? GlobalEnums.CollisionSide.left
+                    : GlobalEnums.CollisionSide.right;
+
+                victim.TakeDamage(__instance.gameObject, side, damage, hazardType: 0);
+                Hits++;
+            }, "Friendly fire");
     }
 }

@@ -26,6 +26,7 @@ namespace HKCouchCoop
         internal readonly ConfigEntry<bool> FreezeExtrasInCutscenes;
         internal readonly ConfigEntry<bool> PlayerTints;
         internal readonly ConfigEntry<bool> CameraZoom;
+        internal readonly ConfigEntry<bool> FriendlyFire;
         internal readonly ConfigEntry<bool> SplitScreen;
         internal readonly ConfigEntry<float> SplitMergeMargin;
         internal readonly ConfigEntry<float> MaxZoomFactor;
@@ -83,6 +84,10 @@ namespace HKCouchCoop
             PlayerTints = f.Bind("General", "PlayerTints", true,
                 "Give each extra player a soft color cast (blue, ember, green) so everyone " +
                 "stays identifiable. Off = all Knights look identical.");
+            FriendlyFire = f.Bind("General", "FriendlyFire", false,
+                "Let Knights hurt each other. Full damage, including the killing blow — an " +
+                "extra who dies leaves a Shade for the others to fight, and player one dying " +
+                "is a real game-over. Off by default: it changes the game a lot.");
             SplitScreen = f.Bind("Camera", "SplitScreen", true,
                 "Divide the screen when the Knights spread further than one view can hold, " +
                 "and merge it back when they regroup. One pane per Knight, up to four.");

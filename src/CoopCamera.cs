@@ -326,27 +326,26 @@ namespace HKCouchCoop
                                                    Pane pane, Camera reference,
                                                    float fovDeg, float camZ)
         {
-            var clamped = ClampForView(cc, target);
-            if (pane == null || pane.Knights.Count == 0 || reference == null
-                || fovDeg <= 0.01f) return clamped;
+            if (pane == null || pane.Knights.Count == 0) return ClampForView(cc, target);
 
-            var planeZ = PlaneZ(pane.Knights);
-            var halfH = HalfHeightAt(reference, fovDeg, planeZ);
-            if (halfH <= 0f) return clamped;
+            // A pane centres on its Knight. The scene-bounds clamp is why the
+            // SHARED view never shows past the edge of a room, and that is a
+            // reasonable nicety when one view serves everyone — but applied to
+            // a pane it drags the camera off the very Knight the pane exists
+            // for, and a player standing near a room's edge ends up shoved to
+            // the side of their own half of the screen. Reported from play, and
+            // it is the wrong trade: a sliver of void beyond the room costs
+            // less than an off-centre player.
+            //
+            // Lock areas still clamp. Inside an arena the limits are the fight,
+            // not a nicety.
+            if (cc != null && cc.lockZoneList != null && cc.lockZoneList.Count > 0)
+                return new Vector3(
+                    Mathf.Clamp(target.x, cc.xLockMin, Mathf.Max(cc.xLockMin, cc.xLockMax)),
+                    Mathf.Clamp(target.y, cc.yLockMin, Mathf.Max(cc.yLockMin, cc.yLockMax)),
+                    target.z);
 
-            var aspect = pane.Viewport.height > 0f && Screen.height > 0
-                ? (Screen.width * pane.Viewport.width) / (Screen.height * pane.Viewport.height)
-                : reference.aspect;
-            var halfW = halfH * Mathf.Max(aspect, 0.01f);
-
-            foreach (var k in pane.Knights)
-            {
-                if (k == null) continue;
-                var p = k.transform.position;
-                if (Mathf.Abs(p.x - clamped.x) > halfW || Mathf.Abs(p.y - clamped.y) > halfH)
-                    return target;      // the clamp would lose them; don't clamp
-            }
-            return clamped;
+            return target;
         }
 
         internal static float PaneFov(Camera reference, Pane pane, float camZ)
