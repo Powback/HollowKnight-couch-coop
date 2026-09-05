@@ -41,13 +41,7 @@ namespace HKCouchCoop
             if (!CoopManager.Active) return true;
 
             var player = CoopManager.FindExtra(instance);
-            if (player == null)
-            {
-                // Player one dying: clear the extras so the game-over is vanilla.
-                Plugin.Log.LogInfo("Player one died — ending co-op session for a clean game-over.");
-                CoopManager.DespawnAll();
-                return true;
-            }
+            if (player == null) return HandlePlayerOneDeath(instance, ref result, hazard);
 
             result = Nothing();
 
@@ -74,6 +68,7 @@ namespace HKCouchCoop
                     if (nearest != null) anchor = nearest.transform.position + new Vector3(1.5f, 0.5f, 0f);
                 }
                 ShadeRevive.Down(player, anchor);
+                EndRunIfEveryoneIsDown();
             }
             else
             {
@@ -83,6 +78,93 @@ namespace HKCouchCoop
                 CoopManager.LeaveByDevice(player.Input?.Device);
             }
             return false;
+        }
+
+        /// <summary>
+        /// A downed party cannot revive itself: every shade needs someone alive
+        /// to beat it, so the last Knight falling leaves everyone standing over
+        /// shades forever. That is the "unless everyone dies" case — hand the
+        /// real death to player one so the game does what it always would have.
+        /// </summary>
+        private static void EndRunIfEveryoneIsDown()
+        {
+            if (CoopManager.AnyoneElseStanding(null)) return;
+            Plugin.Log.LogInfo("Every player is down — handing the real death to player one.");
+            CoopManager.DespawnAll();
+            RedispatchToP1();
+        }
+
+        /// <summary>
+        /// Player one died. He goes down like anyone else if the party can
+        /// still revive him; otherwise this is the real, save-writing death.
+        /// </summary>
+        private static bool HandlePlayerOneDeath(
+            HeroController p1, ref IEnumerator result, bool hazard)
+        {
+            if (TryDownPlayerOne(p1, hazard)) { result = Nothing(); return false; }
+
+            Plugin.Log.LogInfo("Player one died with no one left standing — vanilla game-over.");
+            PlayerOneDown.ForceUp(p1);
+            CoopManager.DespawnAll();
+            return true;
+        }
+
+        /// <summary>
+        /// Player one falls like anyone else while a teammate is still up: his
+        /// shade rises where he died and beating it brings him back. He only
+        /// takes the real, save-writing death when the whole party is down —
+        /// otherwise one player's mistake would end everyone's run.
+        ///
+        /// Requires per-player health and shade revival; on a shared pool a
+        /// death IS the team's death, and there is nobody left to do the
+        /// reviving.
+        /// </summary>
+        private static bool TryDownPlayerOne(HeroController p1, bool hazard)
+        {
+            // Each decline says so. A silent false here becomes a full
+            // vanilla game-over that ends everyone's run, and three separate
+            // investigations were spent asking which of these it was — the
+            // same trap HeroController.TakeDamage sets by refusing without a
+            // word.
+            if (!Plugin.Cfg.IndependentHealth.Value || !Plugin.Cfg.ShadeRevive.Value)
+            {
+                Plugin.Log.LogInfo(
+                    "Player one's death runs vanilla: needs IndependentHealth "
+                    + $"(is {Plugin.Cfg.IndependentHealth.Value}) and ShadeRevive "
+                    + $"(is {Plugin.Cfg.ShadeRevive.Value}).");
+                return false;
+            }
+            if (PlayerOneDown.Downed)
+            {
+                Plugin.Log.LogWarning(
+                    "Player one died while already down — the previous down was "
+                    + "never cleared, so this one runs vanilla.");
+                return false;
+            }
+
+            var one = CoopManager.OneRecord;
+            one.Hero = p1;
+            if (!CoopManager.AnyoneElseStanding(one))
+            {
+                Plugin.Log.LogInfo(
+                    $"Player one's death runs vanilla: nobody else is standing "
+                    + $"({CoopManager.PlayerCount - 1} extra(s) on the roster).");
+                return false;
+            }
+
+            // A hazard death leaves the body in spikes or a pit, so the shade
+            // rises beside a living Knight instead of somewhere unreachable.
+            Vector3? anchor = null;
+            if (hazard)
+            {
+                var nearest = CoopManager.AllHeroes
+                    .OrderBy(h => (h.transform.position - p1.transform.position).sqrMagnitude)
+                    .FirstOrDefault(h => !ReferenceEquals(h, p1));
+                if (nearest != null) anchor = nearest.transform.position + new Vector3(1.5f, 0.5f, 0f);
+            }
+
+            ShadeRevive.Down(one, anchor);
+            return true;
         }
 
         [HarmonyPatch(typeof(HeroController), "Die")]

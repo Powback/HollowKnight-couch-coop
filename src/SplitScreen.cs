@@ -85,6 +85,7 @@ namespace HKCouchCoop
         private static bool _registered;
         private static bool _driving;      // we turned the camera's auto-render off
 
+
         // Driving the camera means holding its automatic render off, which is
         // the one state in this mod that is worse to be stuck in than to be
         // wrong in: a mis-framed pane is a bad frame, a camera left disabled is
@@ -141,17 +142,52 @@ namespace HKCouchCoop
             var tk = GameCameras.instance != null ? GameCameras.instance.tk2dCam : null;
             try
             {
-                Freeze.Frozen = true;   // tk2d must not reclaim the viewport
+                // tk2d is frozen ONLY for the compositor, which renders the
+                // game camera into a texture and so genuinely needs it to stop
+                // reclaiming the viewport.
+                //
+                // The pane path must NOT freeze it. Suppressing tk2d's per-frame
+                // camera update stops it rebuilding the projection matrix and
+                // consuming ZoomFactor, not just resetting the rect — a frozen
+                // game camera is an inert one. That is what made pane zero draw
+                // black while the plain-camera panes were fine, and the channel
+                // said so plainly: ZoomFactor read 1 and the half-height never
+                // left its base while the framing code set both every frame.
+                // NOT frozen, for either path.
+                //
+                // Freezing tk2d stops it reclaiming the viewport, but the same
+                // per-frame update builds the projection matrix and consumes
+                // ZoomFactor — a frozen game camera is an inert one. That made
+                // pane zero draw black, and the compositor kept the exception
+                // because it renders that camera into a texture, where the
+                // viewport seemed not to matter. It matters exactly as much:
+                // an inert camera captures nothing, so the compositor painted
+                // the screen from empty textures. Measured at 1.3 brightness
+                // against 14.3 whole.
+                Freeze.Frozen = false;
                 _driving = true;
 
                 // Rotating split: a different way of reaching the screen, so
                 // it either takes over completely or does not run at all.
-                if (Plugin.Cfg.SplitRotate.Value && _panes.Count >= 2
-                    && _panes.Count <= 4 && SplitCompositor.Available)
+                if (UsingCompositor)
                 {
-                    EnsurePaneCameras(cam);
+                    EnsurePaneCameras(cam, _panes.Count);
                     if (SplitCompositor.Draw(cam, cc, _panes, _extra))
                     {
+                        // Same darkness fix the viewport panes needed, and for
+                        // the same reason: every region renders the whole
+                        // scene, so player one's overlay is in all of them and
+                        // blacks out every region that is not looking at him.
+                        // The compositor draws region zero with the GAME's
+                        // camera and the rest with the spares, so the list has
+                        // to be built in that order — binding _extra alone
+                        // would pair every region with the wrong Knight.
+                        _regionCams.Clear();
+                        _regionCams.Add(cam);
+                        for (var i = 0; i + 1 < _panes.Count && i < _extra.Count; i++)
+                            _regionCams.Add(_extra[i]);
+                        PaneVignettes.Bind(_regionCams, _panes);
+
                         // Switch off only the cameras this layout does NOT use.
                         // The compositor drives _extra[0..panes-2]; starting at
                         // 1 switched off ones it had just enabled, so panes 2
@@ -164,18 +200,40 @@ namespace HKCouchCoop
                 }
                 SplitCompositor.Release(_extra, cam);
 
-                // Pane 0 is the game's own camera, framed and cropped in place.
-                cam.rect = _panes[0].Viewport;
-                CoopCamera.FramePane(cam, cc, tk, _panes[0], cam.transform.position.z);
+                // EVERY pane is a plain camera, pane zero included — the game's
+                // own camera is left completely alone.
+                //
+                // It used to serve pane zero itself, and that special case is
+                // where both of this feature's bad frames came from: it is the
+                // one camera carrying tk2dCamera, which assigns an explicit
+                // projection matrix built for the WHOLE letterbox. Cropping it
+                // with cam.rect left that projection describing a screen the
+                // camera was no longer filling, which play reported as "bottom
+                // splitscreen works but top doesn't properly center" — the
+                // plain-camera panes were right and the tk2d one was not.
+                // Handing tk2d the pane rect instead, so its projection would
+                // agree, stopped it drawing at all ("the screens kinda went
+                // black").
+                //
+                // Rather than keep correcting a camera that fights back, treat
+                // it as one: the fix is to stop asking it to be a pane. It
+                // keeps rendering its own full-letterbox view underneath, where
+                // the panes cover it, so darkness and the image-effect stack
+                // still see exactly the camera they always have.
+                EnsurePaneCameras(cam, _panes.Count);
 
-                EnsurePaneCameras(cam);
-                for (var i = 1; i < _panes.Count; i++)
+                for (var i = 0; i < _panes.Count; i++)
                 {
-                    var pc = _extra[i - 1];
+                    var pc = _extra[i];
                     pc.gameObject.SetActive(true);
-                    CoopCamera.ConfigurePaneCamera(pc, cam, cc, _panes[i], i);
+                    CoopCamera.ConfigurePaneCamera(pc, cam, cc, _panes[i], i + 1);
                 }
-                for (var i = _panes.Count - 1; i < _extra.Count; i++)
+
+                // Show each pane only its own Knight's darkness overlay.
+                // Without this, player one's overlay is in every pane and
+                // blacks out every pane that is not looking at him.
+                PaneVignettes.Bind(_extra, _panes);
+                for (var i = _panes.Count; i < _extra.Count; i++)
                     _extra[i].gameObject.SetActive(false);
 
                 _failures = 0;
@@ -195,20 +253,37 @@ namespace HKCouchCoop
             }
         }
 
+        /// <summary>
+        /// Whether this frame is drawn by the rotating compositor rather than
+        /// by viewport panes. Asked in two places — which path draws, and
+        /// whether tk2d has to be frozen for it — and those two must never
+        /// disagree, so they read one answer.
+        /// </summary>
+        private static bool UsingCompositor =>
+            Plugin.Cfg.SplitRotate.Value && _panes.Count >= 2
+            && _panes.Count <= 4 && SplitCompositor.Available;
+
         private static readonly List<Camera> _extra = new List<Camera>();
+
+        /// <summary>Region index -> the camera that draws it, compositor order.</summary>
+        private static readonly List<Camera> _regionCams = new List<Camera>();
         private static GameObject _holder;
 
-        /// <summary>One spare camera per pane beyond the first, made once.</summary>
-        private static void EnsurePaneCameras(Camera source)
+        /// <summary>
+        /// At least <paramref name="count"/> plain pane cameras, made once and
+        /// reused. Only ever grows; callers switch off the ones they do not
+        /// need, so the two draw paths can ask for different counts.
+        /// </summary>
+        private static void EnsurePaneCameras(Camera source, int count)
         {
             if (_holder == null)
             {
                 _holder = new GameObject("HKCouchCoop Panes");
                 Object.DontDestroyOnLoad(_holder);
             }
-            while (_extra.Count < _panes.Count - 1)
+            while (_extra.Count < count)
             {
-                var go = new GameObject("Pane " + (_extra.Count + 2));
+                var go = new GameObject("Pane " + (_extra.Count + 1));
                 go.transform.SetParent(_holder.transform, worldPositionStays: false);
                 var c = go.AddComponent<Camera>();
                 c.enabled = true;
@@ -222,6 +297,8 @@ namespace HKCouchCoop
             if (!_driving) return;
             _driving = false;
             Freeze.Frozen = false;
+
+            PaneVignettes.Release();                // overlays back where they were
             SplitCompositor.Release(_extra, cam);   // hands the screen back
             cam.rect = letterbox;
             cam.enabled = true;
@@ -373,7 +450,37 @@ namespace HKCouchCoop
                             .ToList()))
                     .Close());
             }
-            return j.AddRaw("panes", Json.Array(panes)).Close();
+            j.AddRaw("panes", Json.Array(panes));
+            return j.AddRaw("paneCameras", Json.Array(PaneCameraJson())).Close();
+        }
+
+        /// <summary>
+        /// The pane CAMERAS, not just the intended layout. A pane can be laid
+        /// out perfectly and still draw nothing, and every split-screen bug so
+        /// far has lived in that gap — the layout was always right. Report what
+        /// Unity will actually act on.
+        /// </summary>
+        private static List<string> PaneCameraJson()
+        {
+            var cams = new List<string>();
+            foreach (var c in _extra)
+            {
+                cams.Add(c == null
+                    ? Json.Object().Add("null", true).Close()
+                    : Json.Object()
+                        .Add("active", c.gameObject.activeInHierarchy)
+                        .Add("enabled", c.enabled)
+                        .Add("depth", c.depth)
+                        .Add("cullingMask", c.cullingMask)
+                        .Add("hasTarget", c.targetTexture != null)
+                        .Add("rx", c.rect.x).Add("ry", c.rect.y)
+                        .Add("rw", c.rect.width).Add("rh", c.rect.height)
+                        .Add("px", c.transform.position.x)
+                        .Add("py", c.transform.position.y)
+                        .Add("fov", c.fieldOfView)
+                        .Close());
+            }
+            return cams;
         }
     }
 }

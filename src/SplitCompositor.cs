@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using CoopKit;
 
 namespace HKCouchCoop
 {
@@ -249,6 +250,9 @@ namespace HKCouchCoop
             _blit = new Material(Shader()) { hideFlags = HideFlags.HideAndDontSave };
         }
 
+        private static readonly ThrottledLog _passLog =
+            new ThrottledLog(10, m => Plugin.Log.LogError(m));
+
         /// <summary>Paints the screen from the pane textures, once per frame.</summary>
         private sealed class Painter : MonoBehaviour
         {
@@ -290,15 +294,49 @@ namespace HKCouchCoop
                 if (poly.Count < 3) return;
 
                 _blit.mainTexture = tex;
-                _blit.SetPass(0);
+
+                // Unity's own examples set the pass INSIDE the matrix block —
+                // PushMatrix, SetPass, LoadOrtho — and this had it outside and
+                // before. Painting flat white still came out black, which ruled
+                // out the textures and every camera upstream and left the draw
+                // itself, so the ordering is the thing to correct.
                 GL.PushMatrix();
+                var ok = _blit.SetPass(0);
                 GL.LoadOrtho();
+                if (!ok)
+                {
+                    // SetPass returning false means the shader has no usable
+                    // pass — nothing will draw, and it says so once rather
+                    // than painting black forever in silence.
+                    _passLog.Log(Time.unscaledTimeAsDouble,
+                        "Split compositor: SetPass failed on shader '"
+                        + (_blit.shader != null ? _blit.shader.name : "null")
+                        + "' — the rotating split cannot paint.");
+                    GL.PopMatrix();
+                    return;
+                }
                 GL.Begin(GL.TRIANGLES);
                 for (var i = 1; i < poly.Count - 1; i++)
                 {
+                    // Both windings. Unlit/Texture culls back faces, and under
+                    // GL.LoadOrtho the fan came out facing away — so every
+                    // triangle was discarded and the screen stayed black while
+                    // everything upstream measured healthy: the paint ran, the
+                    // texture was real, the polygon had four corners and
+                    // SetPass succeeded. Proven by putting this camera above
+                    // the HUD, where its clear covered the HUD (so it does
+                    // reach the screen) and the fill still drew nothing.
+                    //
+                    // Emitting the reverse as well costs a handful of
+                    // triangles and makes the fill independent of which way
+                    // the projection winds.
                     Emit(poly[0]);
                     Emit(poly[i]);
                     Emit(poly[i + 1]);
+
+                    Emit(poly[0]);
+                    Emit(poly[i + 1]);
+                    Emit(poly[i]);
                 }
                 GL.End();
                 GL.PopMatrix();

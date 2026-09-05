@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using CoopKit;
+using InControl;
 using HarmonyLib;
 
 namespace HKCouchCoop
@@ -35,6 +36,20 @@ namespace HKCouchCoop
         /// <summary>Give PlayerData its own values back. See Plugin's frame
         /// boundary check; mirrors ShadeRevive.ForceRestoreBank.</summary>
         internal static int ForceEndAll() => Swap.ForceEndAll();
+
+        /// <summary>
+        /// A Knight's mask count, from wherever that Knight actually keeps it:
+        /// the shared PlayerData for player one, its own pool for a clone.
+        /// Reading PlayerData for everyone reports player one's masks three
+        /// times over and makes a clone's damage look like it did nothing.
+        /// </summary>
+        internal static int Read(HeroController hc)
+        {
+            var extra = CoopManager.FindExtra(hc);
+            if (extra != null) return extra.Health;
+            var pd = PlayerData.instance;
+            return pd != null ? pd.health : 0;
+        }
 
         internal static PoolSwap<CoopPlayer>.Scope Begin(HeroController hc)
         {
@@ -98,112 +113,226 @@ namespace HKCouchCoop
     /// Shade for the others to fight, and player one dying is the real
     /// game-over it has always been, because player one is the save file.
     /// </summary>
-    [HarmonyPatch(typeof(DamageEnemies), "FixedUpdate")]
-    internal static class FriendlyFirePatch
+    /// <summary>
+    /// Friendly fire, hung off the swing itself.
+    ///
+    /// Two earlier attempts failed for reasons worth keeping. Hanging it on
+    /// DamageEnemies.OnTriggerEnter2D never fired at all: trigger callbacks go
+    /// through the physics layer matrix, where nail-versus-hero is disabled.
+    /// Moving to DamageEnemies.FixedUpdate never fired either — a run measured
+    /// patchRuns:0 — because that component is not what a Knight's nail uses.
+    ///
+    /// NailSlash.StartSlash IS the swing: it is the method that enables the
+    /// nail's own polygon collider. So a swing is registered here and tested
+    /// against the other Knights for as long as it lasts, with
+    /// Collider2D.Distance measuring the geometry directly rather than asking
+    /// the physics system who is allowed to touch whom.
+    /// </summary>
+    internal static class FriendlyFire
     {
-        // Where the chain breaks, published rather than guessed at.
-        internal static int Ticks;       // this patch ran on a Knight's nail
-        internal static int Overlaps;    // the nail was touching another Knight
-        internal static int Hits;        // damage actually dealt
+        // Three probes along the one path an attack takes:
+        //   inputActions.attack  ->  CanAttack()  ->  DoAttack()  ->  StartSlash()
+        // A zero at the end says nothing about WHICH link broke, and several
+        // rewrites were spent guessing. Each link now reports for itself.
+        internal static int Samples;     // the probe below ran at all
+        internal static int NoHandler;   // ...but InputHandler was not there
+        internal static int InputSeen;   // InControl gave player one the button
+        internal static int RawAction3;  // ANY pad reported physical X itself
+        internal static int RawAnyButton;// ANY pad reported ANY face button
+        internal static int Attacks;     // DoAttack ran: input arrived AND the gate opened
+        internal static int Slashes;     // StartSlash seen at all, by anyone
+        internal static int Swings;      // ...and it was a Knight's, with FF on
+        internal static int Overlaps;    // a swing was on another Knight
+        internal static int Hits;        // TakeDamage was CALLED on a Knight
+        internal static int Landed;      // ...and a mask actually came off
+        internal static int Refused;     // ...and the game refused it
 
-        // One hit per victim per swing, not one per physics step: vanilla
-        // re-damages every FixedUpdate while a target overlaps, which against
-        // a teammate standing on you is a mask per frame.
-        //
-        // Keyed by the individual damage box, NOT one shared set. Every
-        // DamageEnemies in the game shares this patch — other Knights' nails,
-        // and enemies' too, since KnightHatchling and StalactiteControl carry
-        // one — so a single set cleared on any disable would let one player's
-        // swing ending re-arm another player's swing against the same victim,
-        // and a falling stalactite could do it from across the room.
-        private static readonly Dictionary<int, HashSet<int>> HitThisSwing =
-            new Dictionary<int, HashSet<int>>();
+        private static readonly ThrottledLog _hitLog =
+            new ThrottledLog(1, m => Plugin.Log.LogInfo(m));
 
-        private static HashSet<int> VictimsOf(int nailId)
+        private sealed class Swing
         {
-            HashSet<int> set;
-            if (!HitThisSwing.TryGetValue(nailId, out set))
-            {
-                set = new HashSet<int>();
-                HitThisSwing[nailId] = set;
-            }
-            return set;
+            internal HeroController Attacker;
+            internal Collider2D Blade;
+            internal float Until;
+            internal readonly HashSet<int> Struck = new HashSet<int>();
         }
 
-        /// <summary>This damage box was put away; its swing is over.</summary>
-        internal static void ClearSwing(int nailId) => HitThisSwing.Remove(nailId);
+        private static readonly List<Swing> Active = new List<Swing>();
 
-        private static void Postfix(DamageEnemies __instance) => Guard.Run(() =>
+        /// <summary>A Knight swung. Watch it for as long as the arc lasts.</summary>
+        internal static void Begin(NailSlash slash)
         {
+            if (slash == null) return;
+            // Counted BEFORE any guard. Every previous version of this counter
+            // sat behind the friendly-fire check, so a zero could not tell "no
+            // swing reached the game" from "swings happened and were filtered"
+            // — and two rewrites were spent on the wrong half of that.
+            Slashes++;
             if (!Plugin.Cfg.FriendlyFire.Value || !CoopManager.Active) return;
-            if (__instance == null || !__instance.isActiveAndEnabled) return;
+            var attacker = slash.GetComponentInParent<HeroController>();
+            if (attacker == null) return;
+            var blade = slash.GetComponent<Collider2D>();
+            if (blade == null) return;
 
-            var attacker = __instance.GetComponentInParent<HeroController>();
-            if (attacker == null) return;          // not a Knight's attack
-            var damage = __instance.damageDealt;
-            if (damage <= 0) return;
+            Swings++;
+            Active.Add(new Swing
+            {
+                Attacker = attacker,
+                Blade = blade,
+                Until = Time.unscaledTime + 0.4f,   // longer than any slash arc
+            });
+        }
 
-            var nail = __instance.GetComponent<Collider2D>();
-            if (nail == null || !nail.enabled) return;
-            Ticks++;
+        /// <summary>Driven from Plugin.Update.</summary>
+        /// <summary>
+        /// Samples player one's raw attack button. This asks InControl the same
+        /// question HeroController asks, so a zero here is proof the input
+        /// never arrived rather than an inference from a missing swing.
+        /// </summary>
+        internal static void SampleInput()
+        {
+            // Counted first. A guarded counter cannot tell "never pressed" from
+            // "never sampled", which is the exact trap the Slashes counter fell
+            // into twice.
+            Samples++;
 
-            var alreadyHit = VictimsOf(__instance.GetInstanceID());
+            // Ask InControl about the hardware directly, below any binding.
+            // This separates the two remaining explanations for a dead attack
+            // button: RawAction3 climbing while InputSeen stays flat means the
+            // pad is fine and the game's binding is not; both flat means the
+            // button never reaches InControl at all, and the fault is under the
+            // game — the pad, SDL, or Proton's XInput.
+            for (var i = 0; i < InputManager.Devices.Count; i++)
+            {
+                var d = InputManager.Devices[i];
+                if (d == null) continue;
+                if (d.Action3.IsPressed) RawAction3++;
+                if (d.Action1.IsPressed || d.Action2.IsPressed
+                    || d.Action3.IsPressed || d.Action4.IsPressed) RawAnyButton++;
+            }
+
+            var ih = InputHandler.Instance;
+            if (ih == null || ih.inputActions == null) { NoHandler++; return; }
+            if (ih.inputActions.attack.IsPressed) InputSeen++;
+        }
+
+        internal static void Tick()
+        {
+            if (Active.Count == 0) return;
+            var now = Time.unscaledTime;
+            for (var i = Active.Count - 1; i >= 0; i--)
+            {
+                var sw = Active[i];
+                if (sw.Attacker == null || sw.Blade == null || now > sw.Until)
+                {
+                    Active.RemoveAt(i);
+                    continue;
+                }
+                if (!sw.Blade.enabled) continue;    // between frames of the arc
+                Resolve(sw);
+            }
+        }
+
+        private static void Resolve(Swing sw)
+        {
+            // ONE mask, not nailDamage. HeroController.TakeDamage counts in
+            // masks, while nailDamage is the enemy-facing number (5 on a base
+            // nail, more once upgraded) — passing it emptied a full six-mask
+            // Knight in three swings, which is not "friendly fire can kill",
+            // it is a one-hit kill wearing a disguise. Contact damage in this
+            // game is one mask, sometimes two; a nail is worth one.
+            const int damage = 1;
+
             foreach (var victim in CoopManager.AllHeroes)
             {
-                if (victim == null || ReferenceEquals(victim, attacker)) continue;
+                if (victim == null || ReferenceEquals(victim, sw.Attacker)) continue;
                 var id = victim.GetInstanceID();
-                if (alreadyHit.Contains(id) || !Overlapping(nail, victim)) continue;
+                if (sw.Struck.Contains(id) || !Overlapping(sw.Blade, victim)) continue;
 
                 Overlaps++;
-                Strike(attacker, victim, __instance.gameObject, damage);
-                alreadyHit.Add(id);
+                var side = sw.Attacker.transform.position.x <= victim.transform.position.x
+                    ? GlobalEnums.CollisionSide.left
+                    : GlobalEnums.CollisionSide.right;
+                // Their own TakeDamage: the pool swap puts it on their health,
+                // their invulnerability applies, their death is their own.
+                // Measured across the call, because "we dealt a hit" and "a
+                // mask came off" are different claims and this counter has
+                // already been read as the second when it only ever meant the
+                // first. HeroController.TakeDamage refuses silently for a list
+                // of reasons — invulnerability frames after an earlier hit,
+                // damage mode, recoil — and returns nothing to say so.
+                var pool = HealthPool.Read(victim);
+                victim.TakeDamage(sw.Blade.gameObject, side, damage, hazardType: 0);
+                var after = HealthPool.Read(victim);
+                if (after < pool) Landed++;
+                else Refused++;
+                // Name the condition that refused it. CanTakeDamage tests
+                // eight things and returns one bool, so "refused" on its own
+                // sends the next person round the same loop this one took.
+                _hitLog.Log(Time.unscaledTimeAsDouble,
+                    $"Friendly fire: {pool} -> {after} masks on {victim.gameObject.name}"
+                    + (after < pool ? "" : " REFUSED by " + WhyRefused(victim)));
+
+                sw.Struck.Add(id);
                 Hits++;
             }
-        }, "Friendly fire");
+        }
 
         /// <summary>
-        /// Is the swing actually on them?
-        ///
-        /// Collider2D.Distance, NOT IsTouching and not a trigger callback.
-        /// Both of those go through the physics layer matrix, where
-        /// nail-versus-hero is disabled — which is exactly why a swing passes
-        /// through a teammate, and why hanging this on OnTriggerEnter2D landed
-        /// no hits at all. Distance measures the geometry whatever the matrix
-        /// says about who may collide with whom.
+        /// Which of HeroController.CanTakeDamage's conditions is blocking.
+        /// Read straight off the victim, so it describes this refusal rather
+        /// than a guess about refusals in general.
         /// </summary>
-        private static bool Overlapping(Collider2D nail, HeroController victim)
+        private static string WhyRefused(HeroController v)
+        {
+            var pd = PlayerData.instance;
+            var why = new List<string>();
+            if (v.cState == null) return "no cState";
+            if (v.cState.invulnerable) why.Add("invulnerable (i-frames)");
+            if (v.cState.recoiling) why.Add("recoiling");
+            if (v.cState.dead) why.Add("dead");
+            if (v.cState.hazardDeath) why.Add("hazardDeath");
+            if (pd != null && pd.isInvincible) why.Add("playerData.isInvincible");
+            if (v.transitionState != GlobalEnums.HeroTransitionState.WAITING_TO_TRANSITION)
+                why.Add("transitionState=" + v.transitionState);
+            if (v.damageMode != GlobalEnums.DamageMode.FULL_DAMAGE)
+                why.Add("damageMode=" + v.damageMode);
+            return why.Count > 0 ? string.Join(" + ", why.ToArray()) : "nothing obvious";
+        }
+
+        /// <summary>
+        /// Geometry, not physics. Collider2D.Distance ignores the layer matrix
+        /// that stops a nail touching a hero in the first place.
+        /// </summary>
+        private static bool Overlapping(Collider2D blade, HeroController victim)
         {
             foreach (var vc in victim.GetComponents<Collider2D>())
             {
                 if (vc == null || !vc.enabled) continue;
-                if (nail.Distance(vc).isOverlapped) return true;
+                if (blade.Distance(vc).isOverlapped) return true;
             }
             return false;
         }
-
-        /// <summary>
-        /// Hit them with their OWN TakeDamage, so the pool swap puts it on
-        /// their health, their invulnerability frames apply, and their death
-        /// runs their own death — a Shade for an extra, a real game-over for
-        /// player one, who is the save file.
-        /// </summary>
-        private static void Strike(HeroController attacker, HeroController victim,
-                                   GameObject source, int damage)
-        {
-            var side = attacker.transform.position.x <= victim.transform.position.x
-                ? GlobalEnums.CollisionSide.left
-                : GlobalEnums.CollisionSide.right;
-            victim.TakeDamage(source, side, damage, hazardType: 0);
-        }
     }
 
-    /// <summary>A swing ends when the nail's damage box is put away.</summary>
-    [HarmonyPatch(typeof(DamageEnemies), "OnDisable")]
-    internal static class FriendlyFireSwingEndPatch
+    /// <summary>
+    /// Counts DoAttack, which sits between the input read and the swing. With
+    /// this and <see cref="FriendlyFire.InputSeen"/>, a failed swing names its
+    /// own cause: no input means the button never bound, input without an
+    /// attack means CanAttack() refused, and an attack without a slash means
+    /// this assembly's patch did not take.
+    /// </summary>
+    [HarmonyPatch(typeof(HeroController), "DoAttack")]
+    internal static class AttackProbePatch
     {
-        private static void Postfix(DamageEnemies __instance) => Guard.Run(() =>
-        {
-            if (__instance != null) FriendlyFirePatch.ClearSwing(__instance.GetInstanceID());
-        }, "Friendly fire swing end");
+        private static void Postfix() => FriendlyFire.Attacks++;
+    }
+
+    [HarmonyPatch(typeof(NailSlash), nameof(NailSlash.StartSlash))]
+    internal static class NailSwingPatch
+    {
+        private static void Postfix(NailSlash __instance) =>
+            Guard.Run(() => FriendlyFire.Begin(__instance), "Friendly fire swing");
     }
 }

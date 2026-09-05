@@ -133,6 +133,14 @@ namespace HKCouchCoop
                 // Knight to the middle of the room it is in, instead of guessing
                 // a direction and a duration and hoping it does not cross a
                 // transition mid-measurement.
+                // Which door the game brought player one in through. Without
+                // this, "the party landed apart" cannot be told from "player
+                // one himself came in at the wrong gate" — and rooms have
+                // several, so two Knights at a room's top and bottom might be
+                // two different doors rather than one door plus a leftover
+                // position.
+                .Add("entryGate", gm != null ? gm.entryGateName : null)
+                .Add("gathers", CoopManager.Gathers)
                 .Add("sceneWidth", gm != null ? gm.sceneWidth : -1f)
                 .Add("sceneHeight", gm != null ? gm.sceneHeight : -1f)
                 .Add("gameState", gm != null ? gm.gameState.ToString() : null)
@@ -147,10 +155,28 @@ namespace HKCouchCoop
                 .AddRaw("split", SplitScreen.LayoutJson())
                 .AddRaw("friendlyFire", Json.Object()
                     .Add("enabled", Plugin.Cfg.FriendlyFire.Value)
-                    .Add("ticks", FriendlyFirePatch.Ticks)
-                    .Add("overlaps", FriendlyFirePatch.Overlaps)
-                    .Add("hits", FriendlyFirePatch.Hits)
+                    .Add("samples", FriendlyFire.Samples)
+                    .Add("noHandler", FriendlyFire.NoHandler)
+                    .Add("rawAction3", FriendlyFire.RawAction3)
+                    .Add("rawAnyButton", FriendlyFire.RawAnyButton)
+                    .Add("inputSeen", FriendlyFire.InputSeen)
+                    .Add("attacks", FriendlyFire.Attacks)
+                    .Add("slashes", FriendlyFire.Slashes)
+                    .Add("swings", FriendlyFire.Swings)
+                    .Add("overlaps", FriendlyFire.Overlaps)
+                    .Add("hits", FriendlyFire.Hits)
+                    .Add("landed", FriendlyFire.Landed)
+                    .Add("refused", FriendlyFire.Refused)
                     .Close())
+                .Add("playerOneDowned", PlayerOneDown.Downed)
+                // The two settings the death path turns on. Reported so a test
+                // that cannot apply can say so, instead of defaulting to an
+                // assumption and passing for the wrong reason.
+                .AddRaw("config", Json.Object()
+                    .Add("independentHealth", Plugin.Cfg.IndependentHealth.Value)
+                    .Add("shadeRevive", Plugin.Cfg.ShadeRevive.Value)
+                    .Close())
+                .AddRaw("menu", MenuJson())
                 .AddRaw("devices", DevicesArray())
                 .Close();
         }
@@ -201,7 +227,8 @@ namespace HKCouchCoop
                 var tk = cams.tk2dCam;
                 if (tk != null)
                 {
-                    j.Add("tk2dZoomFactor", tk.ZoomFactor)
+                    j.Add("maxZoomFactor", Plugin.Cfg.MaxZoomFactor.Value)
+                     .Add("tk2dZoomFactor", tk.ZoomFactor)
                      .Add("tk2dSettingsFov", tk.CameraSettings.fieldOfView)
                      .Add("tk2dProjection", tk.CameraSettings.projection.ToString());
                 }
@@ -276,6 +303,62 @@ namespace HKCouchCoop
         /// a harness's virtual pads seem to do nothing: a pad the game never
         /// enumerated cannot join, and that failure is otherwise silent.
         /// </summary>
+        /// <summary>Kill one player outright, by number.</summary>
+        private static string Kill(IDictionary<string, string> q)
+        {
+            int n;
+            string raw = null;
+            if (q != null) q.TryGetValue("n", out raw);
+            if (!int.TryParse(raw, out n) || n <= 0) n = 1;
+
+            var hero = n == 1
+                ? CoopManager.PlayerOne
+                : CoopManager.AllHeroes.FirstOrDefault(
+                    h => h != null && h.gameObject.name.Contains("Player " + n));
+
+            var j = Json.Object().Add("did", "kill").Add("n", n);
+            if (hero == null) return j.Add("ok", false).Add("why", "no such player").Close();
+
+            // Invoke Die rather than dealing damage. TakeDamage is refused
+            // for a list of reasons that have nothing to do with what is being
+            // tested — invulnerability frames, damage mode, transition state —
+            // and a refused kill looks identical to a death that failed to
+            // route. Die IS the path the routing patches, so this exercises
+            // exactly the thing under test and cannot silently no-op.
+            var die = HarmonyLib.AccessTools.Method(typeof(HeroController), "Die");
+            if (die == null) return j.Add("ok", false).Add("why", "no Die method").Close();
+            if (die.Invoke(hero, null) is System.Collections.IEnumerator routine)
+                hero.StartCoroutine(routine);
+            Plugin.Log.LogInfo($"Debug kill: player {n} sent down the death path.");
+            return j.Add("ok", true).Close();
+        }
+
+        /// <summary>Where the co-op entry sits in the Options list.</summary>
+        private static string MenuJson()
+        {
+            var order = MultiplayerScreen.OptionsOrder ?? new string[0];
+            var ours = -1;
+            var back = -1;
+            for (var i = 0; i < order.Length; i++)
+            {
+                if (order[i] == null) continue;
+                if (order[i].StartsWith("HKCC_")) ours = i;
+                else if (back < 0
+                         && order[i].IndexOf("apply", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    back = i;
+                else if (back < 0
+                         && order[i].IndexOf("back", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    back = i;
+            }
+            return Json.Object()
+                .Add("built", MultiplayerScreen.Ready)
+                .Add("entryIndex", ours)
+                .Add("backIndex", back)
+                .AddRaw("order", Json.Array(
+                    order.Select(n => Json.Object().Add("name", n).Close()).ToList()))
+                .Close();
+        }
+
         private static string DevicesArray()
         {
             var list = new List<string>();
@@ -407,10 +490,20 @@ namespace HKCouchCoop
                     if (!bool.TryParse(raw, out var ss)) break;
                     j.Add("was", c.SplitScreen.Value); c.SplitScreen.Value = ss;
                     return j.Add("ok", true).Add("now", ss).Close();
+                case "SplitRotate":
+                    // Ships OFF because it reaches the screen a different way —
+                    // cameras render to textures and a compositor paints the
+                    // regions — and that path had never been exercised. A
+                    // setting whose own description says it is the unverified
+                    // one is a setting no test can reach; allowlisting it is
+                    // what makes verifying it possible.
+                    if (!bool.TryParse(raw, out var sr)) break;
+                    j.Add("was", c.SplitRotate.Value); c.SplitRotate.Value = sr;
+                    return j.Add("ok", true).Add("now", sr).Close();
                 default:
                     return j.Add("ok", false)
                         .Add("error", "key not allowlisted")
-                        .Add("accepts", "MaxZoomFactor|SplitMergeMargin|LeashDistance|SplitScreen|FriendlyFire")
+                        .Add("accepts", "MaxZoomFactor|SplitMergeMargin|LeashDistance|SplitScreen|SplitRotate|FriendlyFire")
                         .Close();
             }
             return j.Add("ok", false).Add("error", "could not parse '" + raw + "'").Close();
@@ -433,6 +526,11 @@ namespace HKCouchCoop
                     // not the mod, and breaks whenever a menu moves. This is
                     // the exact method the save-slot button calls.
                     return LoadSave(q);
+                case "kill":
+                    // Death is the one behaviour with no reliable way in from
+                    // outside: hazards depend on where the Knights happen to be
+                    // standing. Debug channel only, like everything here.
+                    return Kill(q);
                 case "join":
                     CoopManager.Join();
                     break;

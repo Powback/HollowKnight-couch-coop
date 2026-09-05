@@ -420,6 +420,39 @@ namespace HKCouchCoop
         internal static void AppendToButtonList(MenuScreen screen, Selectable extra)
             => RewireButtonList(screen, new List<Selectable> { extra }, keepNonRows: false, keepAll: true);
 
+        /// <summary>
+        /// Put a selectable at a specific place in the screen's navigation
+        /// order, rather than on the end.
+        ///
+        /// Appending is wrong for a menu whose last entry is Back: the cursor
+        /// then travels Game Options, Audio, Video, Back, Multiplayer, which
+        /// reads as an afterthought hanging off the bottom of the menu and does
+        /// not match where the entry is drawn.
+        /// </summary>
+        internal static void InsertIntoButtonList(MenuScreen screen, Selectable extra, int index)
+        {
+            var list = screen.GetComponentInChildren<MenuButtonList>(includeInactive: true);
+            if (list == null) return;
+            var entriesField = AccessTools.Field(typeof(MenuButtonList), "entries");
+            var entryType = typeof(MenuButtonList).GetNestedType("Entry", BindingFlags.NonPublic);
+            if (entriesField == null || entryType == null) return;
+            var selectableField = AccessTools.Field(entryType, "selectable");
+
+            var kept = new List<object>();
+            if (entriesField.GetValue(list) is Array existing)
+                foreach (var e in existing)
+                    if (selectableField?.GetValue(e) is Selectable) kept.Add(e);
+
+            var at = Mathf.Clamp(index, 0, kept.Count);
+            var entry = Activator.CreateInstance(entryType);
+            selectableField?.SetValue(entry, extra);
+            kept.Insert(at, entry);
+
+            var merged = Array.CreateInstance(entryType, kept.Count);
+            for (var i = 0; i < kept.Count; i++) merged.SetValue(kept[i], i);
+            entriesField.SetValue(list, merged);
+        }
+
         private static void RewireButtonList(
             MenuScreen screen, List<Selectable> additions, bool keepNonRows, bool keepAll = false)
         {

@@ -58,15 +58,9 @@ namespace HKCouchCoop
 
             var pos = shadeAnchor ?? hero.transform.position;
 
-            // The real death visual: the burst prefab is the clone's own child
-            // copy; detach it so it outlives the body it announces.
-            var death = hero.heroDeathPrefab;
-            if (death != null)
-            {
-                death.transform.SetParent(null, worldPositionStays: true);
-                death.SetActive(true);
-                Object.Destroy(death, 4f);
-            }
+            if (player.IsPlayerOne) { DownPlayerOne(player, hero, pos); return; }
+
+            PlayDeathBurst(hero);
 
             Object.Destroy(hero.gameObject);
             player.Hero = null;
@@ -74,6 +68,33 @@ namespace HKCouchCoop
 
             SpawnShade(player, pos);
             NativeHud.Notify($"Player {player.Number} has fallen — defeat their shade");
+        }
+
+        /// <summary>
+        /// The real death visual. The burst prefab is the Knight's own child
+        /// copy, so it is detached first to outlive the body it announces.
+        /// </summary>
+        internal static void PlayDeathBurst(HeroController hero)
+        {
+            var death = hero != null ? hero.heroDeathPrefab : null;
+            if (death == null) return;
+            death.transform.SetParent(null, worldPositionStays: true);
+            death.SetActive(true);
+            Object.Destroy(death, 4f);
+        }
+
+        /// <summary>
+        /// Player one is hidden in place, not destroyed — his HeroController is
+        /// the singleton the camera follows and the save writes through. The
+        /// shade is spawned identically either way, so a teammate beats it to
+        /// bring him back exactly as for anyone else.
+        /// </summary>
+        private static void DownPlayerOne(CoopPlayer player, HeroController hero, Vector3 pos)
+        {
+            PlayerOneDown.Down(hero);
+            player.Downed = true;
+            SpawnShade(player, pos);
+            NativeHud.Notify("Player one has fallen — defeat their shade");
         }
 
         /// <summary>Also used to re-materialize the shade after a room change.</summary>
@@ -133,7 +154,14 @@ namespace HKCouchCoop
             }
 
             player.Shade = null;
-            CoopManager.ReviveAt(player, at);
+            Restore(player, at);
+        }
+
+        /// <summary>Player one is put back in place; anyone else is respawned.</summary>
+        private static void Restore(CoopPlayer player, Vector3 at)
+        {
+            if (player.IsPlayerOne) CoopManager.RevivePlayerOne(player, at);
+            else CoopManager.ReviveAt(player, at);
         }
 
         private static IEnumerator RestoreBank(Bank bank)

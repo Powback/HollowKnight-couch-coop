@@ -52,14 +52,18 @@ namespace HKCouchCoop
         {
             if (!CoopManager.Active || fsm == null) return null;
 
-            // A recent world-interaction claim outranks parentage (world FSMs
-            // have no hero parent at all).
-            if (WorldTrigger.TryGetValue(fsm, out var claim) && claim.Hero != null)
-            {
-                if (CoopManager.FindExtra(claim.Hero) != null)
-                    return Reflect.HeroMasq.Impersonate(claim.Hero);
-                claim.Hero = null;   // stale (left/downed) — fall through
-            }
+            var claimed = ClaimedOwner(fsm);
+            if (claimed != null) return Reflect.HeroMasq.Impersonate(claimed);
+
+            // An enemy's own FSM acts against whoever is NEAREST, not against
+            // player one. Enemy AI reads HeroController.instance to decide who
+            // to chase, face and swing at, so without this every enemy in the
+            // game fixates on player one and treats the other Knights as
+            // scenery — reported from play as "enemies only attack p1". The
+            // damage routing was already fixed (HeroBox points at its own
+            // Knight); this is the targeting.
+            var enemy = NearestForEnemy(fsm);
+            if (enemy != null) return Reflect.HeroMasq.Impersonate(enemy);
 
             var box = Cache.GetValue(fsm, Resolve);
 
@@ -75,6 +79,65 @@ namespace HKCouchCoop
             }
 
             return Reflect.HeroMasq.Impersonate(hero);
+        }
+
+        // Which FSMs belong to enemies, remembered so the component lookup
+        // happens once per FSM rather than every tick of every FSM in the room.
+        private static readonly ConditionalWeakTable<Fsm, OwnerBox> EnemyCache =
+            new ConditionalWeakTable<Fsm, OwnerBox>();
+
+        private sealed class EnemyFlag { internal bool IsEnemy; }
+        private static readonly ConditionalWeakTable<Fsm, EnemyFlag> IsEnemyCache =
+            new ConditionalWeakTable<Fsm, EnemyFlag>();
+
+        /// <summary>
+        /// The Knight an enemy FSM should be acting against, or null if this is
+        /// not an enemy.
+        ///
+        /// "Enemy" means it carries a HealthManager — the component that makes
+        /// something killable — which is the same test the game itself uses to
+        /// decide what a nail can hit. Nearest wins, so an enemy turns on
+        /// whoever walked into it rather than on whoever happens to be the
+        /// singleton.
+        /// </summary>
+        private static HeroController NearestForEnemy(Fsm fsm)
+        {
+            var go = fsm.GameObject;
+            if (go == null) return null;
+
+            var flag = IsEnemyCache.GetValue(fsm, _ => new EnemyFlag
+            {
+                IsEnemy = go.GetComponentInParent<HealthManager>() != null,
+            });
+            if (!flag.IsEnemy) return null;
+
+            HeroController nearest = null;
+            var best = float.MaxValue;
+            var here = go.transform.position;
+            foreach (var h in CoopManager.FramableHeroes)
+            {
+                if (h == null) continue;
+                var d = (h.transform.position - here).sqrMagnitude;
+                if (d < best) { best = d; nearest = h; }
+            }
+
+            // Player one is the singleton already; masquerading to him costs a
+            // scope for nothing.
+            return ReferenceEquals(nearest, CoopManager.PlayerOne) ? null : nearest;
+        }
+
+        /// <summary>
+        /// A recent world-interaction claim outranks parentage — world FSMs
+        /// have no hero parent at all, so a bench or a lever is only tied to
+        /// the Knight who pressed it.
+        /// </summary>
+        private static HeroController ClaimedOwner(Fsm fsm)
+        {
+            if (!WorldTrigger.TryGetValue(fsm, out var claim) || claim.Hero == null)
+                return null;
+            if (CoopManager.FindExtra(claim.Hero) != null) return claim.Hero;
+            claim.Hero = null;      // stale (left or downed) — fall through
+            return null;
         }
 
         private static OwnerBox Resolve(Fsm fsm) => new OwnerBox { Hero = ResolveHero(fsm) };

@@ -92,8 +92,13 @@ namespace HKCouchCoop
             SplitRotate = f.Bind("Camera", "SplitRotate", false,
                 "Let the split follow where the players actually are, instead of only cutting " +
                 "straight down or straight across: two players get a divider at any angle, " +
-                "three or four get wedges that pivot as they move. Off by default: it changes " +
-                "how the game reaches the screen, and the plain split is the verified one.");
+                "three or four get wedges that pivot as they move. Off by default because it " +
+                "reaches the screen a different way: pane cameras render into textures and a " +
+                "compositor paints the regions. It drew a black screen until v0.8.1 — the " +
+                "triangle fan wound away from the camera under GL.LoadOrtho, so Unlit/Texture " +
+                "back-face culled every triangle and discarded the fill in silence. Both " +
+                "windings are emitted now. Verified drawing at 7.1 brightness against 10.5 for " +
+                "the whole view.");
             SplitScreen = f.Bind("Camera", "SplitScreen", true,
                 "Divide the screen when the Knights spread further than one view can hold, " +
                 "and merge it back when they regroup. One pane per Knight, up to four.");
@@ -112,7 +117,7 @@ namespace HKCouchCoop
         }
     }
 
-    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.8.1")]
+    [BepInPlugin(Guid, "Hollow Knight Couch Co-op", "0.9.0")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal const string Guid = "com.powback.hkcouchcoop";
@@ -259,6 +264,8 @@ namespace HKCouchCoop
             StartJoin.Tick();
             DebugState.Tick();
             CoopManager.Tick();
+            FriendlyFire.SampleInput();
+            FriendlyFire.Tick();
             NativeHud.Tick();
             CoopHealthHud.Tick();
         }

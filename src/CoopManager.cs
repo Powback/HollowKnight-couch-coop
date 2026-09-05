@@ -10,6 +10,14 @@ namespace HKCouchCoop
 {
     internal sealed class CoopPlayer
     {
+        /// <summary>
+        /// True for the record standing in for player one. He is downed and
+        /// revived by a different mechanism (hidden in place, never destroyed —
+        /// see <see cref="PlayerOneDown"/>) but carries a shade like anyone
+        /// else, so the shade machinery is shared and only the two ends differ.
+        /// </summary>
+        internal bool IsPlayerOne;
+
         internal HeroController Hero;      // null while downed
         internal PadInput Input;
         internal int Number;               // 2, 3, 4 — player one is the vanilla hero
@@ -344,6 +352,51 @@ namespace HKCouchCoop
         }
 
         /// <summary>Puts a slain shade's owner back on the field where it fell.</summary>
+        /// <summary>
+        /// The stand-in record for player one, made once. He is not in Extras
+        /// and never joins it: everything that walks the roster must keep
+        /// seeing exactly the extras, or the join limit, leash and camera all
+        /// start counting him twice.
+        /// </summary>
+        private static CoopPlayer _one;
+
+        internal static CoopPlayer OneRecord =>
+            _one ?? (_one = new CoopPlayer { Number = 1, IsPlayerOne = true });
+
+        /// <summary>Is anyone other than <paramref name="who"/> still standing?</summary>
+        internal static bool AnyoneElseStanding(CoopPlayer who)
+        {
+            if (who == null || !who.IsPlayerOne)
+            {
+                if (PlayerOne != null && !PlayerOneDown.Downed) return true;
+            }
+            foreach (var e in Extras)
+            {
+                if (e == who || e.Downed || e.Hero == null) continue;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Put player one back on his feet where his shade was beaten.
+        ///
+        /// Separate from <see cref="ReviveAt"/> rather than a branch inside it:
+        /// that method respawns a destroyed clone, and player one was never
+        /// destroyed. Sharing an entry point would mean every future change to
+        /// clone respawning has to remember he is not one.
+        /// </summary>
+        internal static void RevivePlayerOne(CoopPlayer player, Vector3 position)
+        {
+            var p1 = PlayerOne;
+            if (p1 == null || player == null) return;
+            var pd = PlayerData.instance;
+            var pct = Mathf.Clamp(Plugin.Cfg.ReviveHealthPercent.Value, 10, 100) / 100f;
+            var masks = pd != null ? Mathf.Max(1, Mathf.CeilToInt(pd.CurrentMaxHealth * pct)) : 3;
+            PlayerOneDown.Revive(p1, position, masks);
+            player.Downed = false;
+        }
+
         internal static void ReviveAt(CoopPlayer player, Vector3 position)
         {
             var p1 = PlayerOne;
@@ -390,6 +443,9 @@ namespace HKCouchCoop
             while (Extras.Count > 0) Remove(Extras[Extras.Count - 1]);
             ShadeRevive.ForceRestoreBank();
             _extrasFrozen = false;   // session state must not leak into the next one
+            // A downed player one must never survive the end of a session: the
+            // next one would start with an invisible, uncontrollable hero.
+            PlayerOneDown.ForceUp(PlayerOne);
             _playerOne = null;       // quit-to-menu builds a new hero; re-derive
             SplitScreen.ClearAbandoned();   // a new session gets a fresh try
         }
@@ -444,9 +500,17 @@ namespace HKCouchCoop
             Object.DontDestroyOnLoad(cloneGo);
             Tint(cloneGo, number);
 
-            // One screen, one darkness overlay: scenes push darkness levels to
-            // the singleton hero only, so a clone's vignette copy would sit in
-            // a stale state forever (and double-darken if joined in the dark).
+            // The vignette is a DARKNESS overlay with a hole cut around the
+            // hero — not a lamp. That distinction is why the clone's stays off
+            // even under split-screen, where "give each Knight its own light"
+            // sounds obviously right: every pane camera renders the whole
+            // scene, so it picks up BOTH overlays, and each one darkens the
+            // other's hole. Tried it; the screen went from 46% brightness to
+            // 9%. Per-pane lamps need the vignettes on separate layers with
+            // each pane camera culling the others, not simply switching on.
+            //
+            // Scenes also push darkness levels to the singleton hero only, so
+            // a clone's copy would sit stale forever regardless.
             var cloneHc = cloneGo.GetComponent<HeroController>();
             if (cloneHc != null)
             {
@@ -510,6 +574,27 @@ namespace HKCouchCoop
 
         private static bool _extrasFrozen;
         private static int _gatheredAtFrame;
+        private static int _waitedFrames;
+
+        /// <summary>
+        /// Is this Knight actually within the room, rather than out in the
+        /// doorway the transition dropped them at? Rooms are authored from the
+        /// world origin, so the bounds are simply 0..sceneWidth/Height, with a
+        /// small inset so standing exactly on the boundary does not flicker.
+        /// </summary>
+        private static bool InsideRoom(HeroController hero)
+        {
+            var gm = GameManager.instance;
+            if (gm == null || hero == null) return true;
+            var w = gm.sceneWidth;
+            var h = gm.sceneHeight;
+            if (w <= 0f || h <= 0f) return true;      // unknown: do not block
+            var p = hero.transform.position;
+            return p.x > 0.5f && p.x < w - 0.5f && p.y > 0.5f && p.y < h - 0.5f;
+        }
+
+        /// <summary>How many times a Knight has been pulled to player one.</summary>
+        internal static int Gathers;
 
         /// <summary>
         /// When the game takes control from player one (dialogue, cutscenes,
@@ -547,6 +632,9 @@ namespace HKCouchCoop
 
             SyncCutsceneFreeze(p1);
 
+            // Ride along with a living Knight while down, so doors still fire.
+            PlayerOneDown.Tick(p1);
+
             if (HandleSceneChange(p1)) return;
 
             ApplyLeash(p1);
@@ -568,6 +656,26 @@ namespace HKCouchCoop
                 // bottom entrances having walked through one door.
                 if (!p1.isHeroInPosition) return true;
 
+                // isHeroInPosition goes true when the entry sequence STARTS,
+                // not when it ends: a play session logged it at x = -1.50,
+                // outside the room, still in the doorway. Collecting there puts
+                // everyone on the threshold and vanilla then walks player one
+                // inward alone — the reported bug, a party arriving in two
+                // different spots.
+                //
+                // Waiting for him to STOP was the obvious repair and it was
+                // wrong: a player holds the stick through a door, so he never
+                // stops, the gather never fires, and the pending flag stays set
+                // — which also keeps the camera standing down. Wait for him to
+                // be INSIDE THE ROOM instead. That is the actual condition the
+                // doorway case violates, and it does not care what the player
+                // is holding.
+                if (!InsideRoom(p1) && ++_waitedFrames < 90) return true;
+                _waitedFrames = 0;
+
+                Plugin.Log.LogInfo(
+                    $"Room change: player one inside the room at {p1.transform.position}, "
+                    + $"collecting {Extras.Count} extra(s).");
                 GatherToP1("scene change");
 
                 // Hand them the flag vanilla would have set if they had been
@@ -578,26 +686,34 @@ namespace HKCouchCoop
 
                 CoopCamera.Reset();   // snap to the new room, don't sweep across it
                 _gatheredAtFrame = Time.frameCount;
+                _waitedFrames = 0;
                 _sceneChangePending = false;
                 return true;
             }
 
+            CollectStragglers(p1);
+            return false;
+        }
+
+        /// <summary>
             // Vanilla can still be walking player one further into the room
             // for a few frames after it says he has arrived, which would leave
             // the party standing on the doorstep behind him. So for a short
-            // window afterwards, collect anyone who has been left BEHIND —
-            // and only them.
-            //
-            // Not an unconditional re-gather. GatherToP1 teleports, so doing
-            // it every frame of the window would overwrite a player's own
-            // movement thirty frames running: half a second after every door
-            // where you press right and do not move. Only a Knight further
-            // away than the doorstep gap gets pulled, so anyone already with
-            // the group keeps their input.
+        /// window afterwards, collect anyone who has been left BEHIND — and only
+        /// them.
+        ///
+        /// Not an unconditional re-gather. GatherToP1 teleports, so doing it
+        /// every frame of the window would overwrite a player's own movement
+        /// for the whole window: press right after a door and not move. Only a
+        /// Knight further away than the doorstep gap gets pulled, so anyone
+        /// already with the group keeps their input.
+        /// </summary>
+        private static void CollectStragglers(HeroController p1)
+        {
             if (_gatheredAtFrame > 0)
             {
                 var since = Time.frameCount - _gatheredAtFrame;
-                if (since >= 30)
+                if (since >= 120)
                 {
                     _gatheredAtFrame = 0;
                     CoopCamera.Reset();   // once, at the end, so it can smooth again
@@ -609,11 +725,27 @@ namespace HKCouchCoop
                         if (e.Hero == null) continue;
                         var gap = Vector2.Distance(
                             p1.transform.position, e.Hero.transform.position);
-                        if (gap > 12f) SnapTo(e.Hero, p1, e, "left on the doorstep");
+                        // Twenty-five units: genuinely stranded, not merely
+                        // apart. This window used to compensate for gathering
+                        // too early, so it was tightened to three — and with
+                        // the gather now waiting for player one to actually
+                        // stop, that turned it into a leash: for two seconds
+                        // after every door, walking three units from player one
+                        // teleported you back. Reported from play as "p2
+                        // teleports to p1 for no reason".
+                        //
+                        // The gather itself is the mechanism now. This is only
+                        // a net for a Knight left somewhere it could never walk
+                        // back from.
+                        // Ten units: further than a door's walk-in, closer than
+                        // anywhere a player would deliberately wander in the
+                        // couple of seconds after arriving. Three was a leash
+                        // (it fired constantly); twenty-five never fired for the
+                        // doorway case it exists for.
+                        if (gap > 10f) SnapTo(e.Hero, p1, e, "left behind at the door");
                     }
                 }
             }
-            return false;
         }
 
         /// <summary>
@@ -725,7 +857,11 @@ namespace HKCouchCoop
             hero.transform.position = target.transform.position + new Vector3(1.0f, 0.5f, 0f);
             var rb = hero.GetComponent<Rigidbody2D>();
             if (rb != null) rb.linearVelocity = Vector2.zero;
-            Plugin.Log.LogDebug($"{hero.gameObject.name} pulled to player one: {reason}");
+            // Info, not Debug: BepInEx ships with Debug filtered out, so the
+            // one line that says whether a room change actually collected the
+            // party was invisible in every log a player could send back.
+            Gathers++;
+            Plugin.Log.LogInfo($"{hero.gameObject.name} pulled to player one: {reason}");
         }
 
         private static HeroActions P1Actions =>

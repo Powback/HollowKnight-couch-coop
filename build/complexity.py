@@ -69,11 +69,27 @@ def strip_code(text):
     return ''.join(out)
 
 
+TYPE = re.compile(
+    r'^\s*(?:(?:public|private|internal|protected|static|sealed|abstract|partial|new)\s+)*'
+    r'(?:class|struct|interface)\s+([A-Za-z_][A-Za-z0-9_]*)')
+
+
 def methods(path):
-    """Yield (name, complexity) for each method, by brace matching."""
+    """Yield (qualified_name, complexity) for each method, by brace matching.
+
+    Qualified by the enclosing type, NOT bare. Two methods can share a name in
+    one file — HealthPool.Begin and FriendlyFire.Begin did — and a bare key
+    made one budget entry govern both, silently taking the larger score and
+    masking a regression in the smaller one. PowOS's shell version documents
+    the same bug one level up, where basenames collided across directories.
+    """
     src = strip_code(open(path, encoding='utf-8').read())
     lines = src.split('\n')
+    owner = ''
     for idx, line in enumerate(lines):
+        t = TYPE.match(line)
+        if t:
+            owner = t.group(1)
         m = SIG.match(line)
         if not m or line.rstrip().endswith(';'):
             continue
@@ -92,7 +108,7 @@ def methods(path):
             continue                      # expression-bodied member
         text = '\n'.join(body)
         score = 1 + sum(len(d.findall(text)) for d in DECISIONS)
-        yield name, score
+        yield (f"{owner}.{name}" if owner else name), score
 
 
 def scan(paths):
@@ -125,6 +141,15 @@ def main(argv):
     problems = []
     for key, score in sorted(found.items()):
         allowed = budget.get(key)
+        if allowed is None:
+            # Keys used to be file:name and are now file:TYPE.name, because two
+            # types with a same-named method shared one entry and hid 19 of
+            # them. Fall back to the old key rather than migrating the file
+            # wholesale: rewriting it would re-baseline every method at
+            # whatever it measures today, which quietly accepts the growth the
+            # gate exists to catch.
+            path, _, qualified = key.partition(':')
+            allowed = budget.get(f"{path}:{qualified.split('.')[-1]}")
         if allowed is None:
             if score > CAP_NEW:
                 problems.append(f"{key}: {score} > {CAP_NEW} (new code)")
