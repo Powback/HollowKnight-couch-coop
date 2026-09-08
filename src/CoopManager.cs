@@ -846,15 +846,68 @@ namespace HKCouchCoop
                     // one. The shade follows its team — re-materialize it near
                     // player one so revival stays possible.
                     ShadeRevive.DestroyShade(e);
-                    ShadeRevive.SpawnShade(e, p1.transform.position + new Vector3(2f, 0.5f, 0f));
+                    // Same terrain test as a living Knight: a shade inside a
+                    // wall cannot be reached, and an unreachable shade is a
+                    // player who can never be revived.
+                    ShadeRevive.SpawnShade(e, SafeSpotNear(p1));
                 }
             }
+        }
+
+        /// <summary>
+        /// Offsets tried, in order, when bringing a Knight to the group.
+        /// Beside, then further beside, then above, then exactly on player one.
+        /// </summary>
+        private static readonly Vector3[] GatherOffsets =
+        {
+            new Vector3( 1.0f, 0.5f, 0f),
+            new Vector3(-1.0f, 0.5f, 0f),
+            new Vector3( 1.8f, 0.5f, 0f),
+            new Vector3(-1.8f, 0.5f, 0f),
+            new Vector3( 0f,   1.2f, 0f),
+        };
+
+        /// <summary>
+        /// Somewhere next to <paramref name="target"/> that is not inside the
+        /// level.
+        ///
+        /// This used to be a flat +1.0 on x with no test at all. A door beside
+        /// a wall, a narrow ledge or a low ceiling puts that offset inside
+        /// terrain, and a Knight that starts inside geometry falls straight
+        /// through the floor — reported from play as spawning under the room,
+        /// needing a leave-and-re-enter to recover.
+        ///
+        /// Each candidate is rejected if it overlaps terrain, then dropped onto
+        /// whatever ground is just below so nobody is left hanging in the air.
+        /// Player one's own position is the last resort and is always safe: he
+        /// is standing in it.
+        /// </summary>
+        private static Vector3 SafeSpotNear(HeroController target)
+        {
+            var basePos = target.transform.position;
+            var mask = LayerMask.GetMask("Terrain", "Soft Terrain");
+            if (mask == 0) return basePos + GatherOffsets[0];   // layers renamed; old behaviour
+
+            foreach (var off in GatherOffsets)
+            {
+                var p = basePos + off;
+                if (Physics2D.OverlapCircle(p, 0.35f, mask) != null) continue;   // inside the level
+
+                var hit = Physics2D.Raycast(p, Vector2.down, 3f, mask);
+                if (hit.collider != null) p = new Vector3(p.x, hit.point.y + 0.6f, basePos.z);
+                return p;
+            }
+
+            Plugin.Log.LogInfo(
+                "Gather: every spot beside player one is inside terrain — "
+                + "stacking on him rather than dropping a Knight through the floor.");
+            return basePos;
         }
 
         private static void SnapTo(HeroController hero, HeroController target, CoopPlayer player, string reason)
         {
             Tint(hero.gameObject, player.Number);
-            hero.transform.position = target.transform.position + new Vector3(1.0f, 0.5f, 0f);
+            hero.transform.position = SafeSpotNear(target);
             var rb = hero.GetComponent<Rigidbody2D>();
             if (rb != null) rb.linearVelocity = Vector2.zero;
             // Info, not Debug: BepInEx ships with Debug filtered out, so the
