@@ -373,21 +373,53 @@ namespace HKCouchCoop
         {
             var template = vanillaRows[0];
             var parent = template.transform.parent;
-            var top = template.transform.localPosition;
-            float spacing;
+
+            // Measure every row in ONE space. Vanilla rows may each sit under
+            // their own container, in which case every localPosition.y reads 0
+            // and the naive difference between two of them is 0 — which put a
+            // spacing of zero through the loop below and stacked all twenty
+            // rows on a single line. BuildOptionBox carries the same warning
+            // about the options list; this is that bug in the screen itself.
+            Vector3 InParentSpace(Component c) =>
+                parent.InverseTransformPoint(c.transform.position);
+
+            var top = InParentSpace(template);
+
+            float spacing = 0f;
             if (vanillaRows.Count >= 2)
-                spacing = Mathf.Abs(vanillaRows[0].transform.localPosition.y
-                                    - vanillaRows[1].transform.localPosition.y);
-            else
+                spacing = Mathf.Abs(InParentSpace(vanillaRows[0]).y
+                                    - InParentSpace(vanillaRows[1]).y);
+
+            // Degenerate measurement (one row, or rows that share a position):
+            // fall back to the row's own height rather than to zero.
+            if (spacing < 1f)
             {
                 var rt = template.GetComponent<RectTransform>();
-                spacing = rt != null ? rt.rect.height * 1.15f : 60f;
+                spacing = rt != null && rt.rect.height > 1f
+                    ? rt.rect.height * 1.15f : 60f;
             }
             spacing *= 0.85f;   // our set is longer than vanilla's
 
+            var rows = BuildRows().ToList();
+            var totalRows = rows.Count + PadRowPool;
+
+            // Vanilla spacing suits six rows; ours is twenty and would run off
+            // the bottom of the screen — which on a Deck hides most of them.
+            // Compress to fit the band the rows actually have.
+            var budget = parent is RectTransform prt && prt.rect.height > 1f
+                ? prt.rect.height
+                : Mathf.Max(Mathf.Abs(top.y) * 2f, 720f);
+            var slots = Mathf.Max(totalRows - 1, 1);
+            var fitted = Mathf.Min(spacing, budget / slots);
+
+            Plugin.Log.LogInfo(
+                $"Multiplayer screen layout: {totalRows} rows, spacing "
+                + $"{spacing:F1} -> {fitted:F1} (budget {budget:F0}, top y {top.y:F1})");
+            spacing = fitted;
+
             var created = new List<MenuOptionHorizontal>();
             var index = -1;
-            foreach (var row in BuildRows())
+            foreach (var row in rows)
             {
                 var clone = CloneRow(template, row);
                 if (clone == null) continue;
