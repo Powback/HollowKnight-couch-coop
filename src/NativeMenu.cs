@@ -349,10 +349,42 @@ namespace HKCouchCoop
             // for one frame cycle — the "Key - English" bleed. Immediate only.
             foreach (var comp in go.GetComponentsInChildren<MonoBehaviour>(true))
             {
-                if (comp != null && comp.GetType().Name.IndexOf("Localiz",
-                        StringComparison.OrdinalIgnoreCase) >= 0)
-                    UnityEngine.Object.DestroyImmediate(comp);
+                if (comp == null) continue;
+                if (!RewritesTextItself(comp.GetType().Name)) continue;
+                StrippedTypes.Add(comp.GetType().Name);
+                UnityEngine.Object.DestroyImmediate(comp);
             }
+        }
+
+        /// <summary>Type names seen and removed, for the one-time build log.</summary>
+        private static readonly HashSet<string> StrippedTypes = new HashSet<string>();
+
+        /// <summary>
+        /// Does a component of this name rewrite its own text? Anything that
+        /// does has to go, or it stomps our label the next time the screen is
+        /// enabled — which is every time the player opens the menu, so the
+        /// damage is invisible at build time and total in play.
+        ///
+        /// Two ways this was missed before:
+        ///
+        /// * The match was "Localiz", and this build spells half of them the
+        ///   British way — LocalisationHelper, LocaliseSprite,
+        ///   PlatformSpecificLocalisation. "Locali" catches both.
+        /// * DisplayCurrentLanguage contains neither spelling. It belongs to
+        ///   the vanilla Language row, and its OnEnable does
+        ///   `textObject.text = Language.Get("LANG_" + CurrentLanguage())` —
+        ///   so every cloned row's VALUE read "english", because the template
+        ///   we clone carries it and OnEnable runs long after we set the text.
+        /// </summary>
+        private static bool RewritesTextItself(string typeName) =>
+            typeName.IndexOf("Locali", StringComparison.OrdinalIgnoreCase) >= 0
+            || string.Equals(typeName, "DisplayCurrentLanguage", StringComparison.Ordinal);
+
+        internal static void LogStripped()
+        {
+            Plugin.Log.LogInfo(StrippedTypes.Count == 0
+                ? "Multiplayer screen: no text-rewriting components found on the cloned rows."
+                : "Multiplayer screen: stripped " + string.Join(", ", StrippedTypes.ToArray()));
         }
 
         private static void SetLabel(GameObject go, MenuOptionHorizontal option, string label)
@@ -371,8 +403,38 @@ namespace HKCouchCoop
         /// </summary>
         internal static void BuildIntoScreen(MenuScreen screen, List<MenuOptionHorizontal> vanillaRows)
         {
-            var template = vanillaRows[0];
-            var parent = template.transform.parent;
+            // Geometry comes from the topmost vanilla row...
+            var anchor = vanillaRows[0];
+            var parent = anchor.transform.parent;
+
+            // ...but the CLONE SOURCE must be a plain MenuOptionHorizontal.
+            //
+            // The template decides the component TYPE of every row we build,
+            // and UpdateText is `protected virtual`. Game Options' first row is
+            // the Language row, a MenuLanguageSetting whose override ignores
+            // optionList and localizeText completely and writes
+            // Language.Get("LANG_CURRENT") — so every one of our twenty rows
+            // displayed the current language ("english") as its value, and
+            // nothing we set on the option could change it. Resolution,
+            // display, frame cap and style rows are subclasses too.
+            var template = vanillaRows.FirstOrDefault(
+                r => r != null && r.GetType() == typeof(MenuOptionHorizontal));
+            if (template == null)
+            {
+                template = anchor;
+                Plugin.Log.LogWarning(
+                    "Multiplayer screen: no plain MenuOptionHorizontal among the "
+                    + $"vanilla rows (found {string.Join(", ", vanillaRows.Where(r => r != null).Select(r => r.GetType().Name).Distinct().ToArray())}). "
+                    + "Cloning a subclass — row values may be overwritten by its "
+                    + "own UpdateText override.");
+            }
+            else if (template.GetType() != anchor.GetType())
+            {
+                Plugin.Log.LogInfo(
+                    $"Multiplayer screen: cloning plain {template.name} rather than "
+                    + $"{anchor.name} ({anchor.GetType().Name}), whose UpdateText "
+                    + "override would write its own value over ours.");
+            }
 
             // Measure every row in ONE space. Vanilla rows may each sit under
             // their own container, in which case every localPosition.y reads 0
@@ -383,7 +445,7 @@ namespace HKCouchCoop
             Vector3 InParentSpace(Component c) =>
                 parent.InverseTransformPoint(c.transform.position);
 
-            var top = InParentSpace(template);
+            var top = InParentSpace(anchor);
 
             float spacing = 0f;
             if (vanillaRows.Count >= 2)
@@ -446,6 +508,7 @@ namespace HKCouchCoop
                 if (vr != null) UnityEngine.Object.DestroyImmediate(vr.gameObject);
 
             RewireButtonList(screen, created.Cast<Selectable>().ToList(), keepNonRows: true);
+            LogStripped();
             Plugin.Log.LogInfo($"Multiplayer screen: {created.Count} rows placed.");
         }
 
