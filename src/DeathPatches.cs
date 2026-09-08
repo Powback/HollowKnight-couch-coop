@@ -167,13 +167,65 @@ namespace HKCouchCoop
             return true;
         }
 
+        /// <summary>
+        /// Spikes, acid and pits for an extra Knight.
+        ///
+        /// DieFromHazard is NOT a death, and treating it as one was a real bug:
+        /// TakeDamage deducts the mask, checks `playerData.health == 0` and
+        /// only then starts Die(). DieFromHazard is the branch BELOW that —
+        /// the spike-respawn animation every player knows, which costs one
+        /// mask and puts you back on solid ground. Routing it into the death
+        /// handler meant every non-lethal spike touch destroyed an extra
+        /// outright and left a shade to fight.
+        ///
+        /// Vanilla cannot simply run either: it ends in
+        /// `gm.PlayerDeadFromHazard`, which fades the screen and respawns THE
+        /// singleton — one clone brushing a spike would drag the whole party
+        /// through a respawn. So the Knight that touched it is put back at the
+        /// game's own hazard respawn point, and the game's own per-instance
+        /// HazardRespawn() coroutine restores its state.
+        /// </summary>
+        private static void RespawnExtraFromHazard(HeroController hero)
+        {
+            if (hero == null) return;
+
+            var pd = PlayerData.instance;
+            var mark = pd != null ? pd.hazardRespawnLocation : Vector3.zero;
+            if (mark == Vector3.zero)
+            {
+                // No marker recorded in this room yet — beside a living
+                // teammate is far better than leaving them inside the spikes.
+                var mate = CoopManager.AllHeroes
+                    .FirstOrDefault(h => h != null && !ReferenceEquals(h, hero));
+                if (mate != null) mark = mate.transform.position + new Vector3(1f, 0.5f, 0f);
+                else return;
+            }
+
+            hero.transform.position = new Vector3(mark.x, mark.y, hero.transform.position.z);
+
+            // The game's own recovery: clears cState.hazardDeath, resets
+            // motion, input and attacks, and hands control back. Running it on
+            // the extra keeps this identical to what a solo player gets.
+            if (hero.gameObject.activeInHierarchy)
+                hero.StartCoroutine(hero.HazardRespawn());
+
+            Plugin.Log.LogInfo(
+                $"{hero.gameObject.name} hit a hazard: respawned at "
+                + $"({mark.x:F1}, {mark.y:F1}) — one mask, not a death.");
+        }
+
         [HarmonyPatch(typeof(HeroController), "Die")]
         internal static class DiePatch
         {
             private static bool Prefix(HeroController __instance, ref IEnumerator __result)
             {
                 var r = __result;
-                var runVanilla = Guard.Run(() => HandleDeath(__instance, ref r, hazard: false), true, "Death");
+                // Whether the body is lying in spikes decides where the shade
+                // can usefully rise, and Die() does not say — but cState does.
+                var inHazard = __instance != null && __instance.cState != null
+                               && __instance.cState.hazardDeath;
+                var runVanilla = Guard.Run(
+                    () => HandleDeath(__instance, ref r, inHazard), true, "Death");
                 __result = r;
                 return runVanilla;
             }
@@ -185,7 +237,17 @@ namespace HKCouchCoop
             private static bool Prefix(HeroController __instance, ref IEnumerator __result)
             {
                 var r = __result;
-                var runVanilla = Guard.Run(() => HandleDeath(__instance, ref r, hazard: true), true, "HazardDeath");
+                var runVanilla = Guard.Run(() =>
+                {
+                    if (!CoopManager.Active) return true;
+                    // Player one owns the global hazard respawn; vanilla is
+                    // exactly right for him.
+                    if (CoopManager.FindExtra(__instance) == null) return true;
+
+                    r = Nothing();
+                    RespawnExtraFromHazard(__instance);
+                    return false;
+                }, true, "HazardRespawn");
                 __result = r;
                 return runVanilla;
             }

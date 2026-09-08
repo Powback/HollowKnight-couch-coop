@@ -247,8 +247,15 @@ namespace HKCouchCoop
         {
             var j = Json.Object().Add("n", number).Add("isPlayerOne", true);
             AddTransform(j, hero);
-            j.Add("alive", hero != null)
-             .Add("downed", false)
+            // Player one's downed state used to be hardcoded false here, which
+            // made the entire player-one death path unobservable: he is hidden
+            // in place rather than destroyed, so `alive` is true either way and
+            // nothing else in the channel moved. A test could not tell "went
+            // down and is revivable" from "took the real game-over".
+            var oneDown = Guard.Run(() => PlayerOneDown.Downed, false, "P1 downed");
+            j.Add("alive", hero != null && !oneDown)
+             .Add("downed", oneDown)
+             .AddRaw("shade", ShadeJson(CoopManager.OneRecord))
              .Add("health", pd != null ? pd.health : -1)
              .Add("healthBlue", pd != null ? pd.healthBlue : -1)
              .Add("maxHealth", pd != null ? pd.CurrentMaxHealth : -1)
@@ -272,6 +279,7 @@ namespace HKCouchCoop
             AddTransform(j, e.Hero);
             j.Add("alive", e.Hero != null && !e.Downed)
              .Add("downed", e.Downed)
+             .AddRaw("shade", ShadeJson(e))
              .Add("health", e.Health)
              .Add("healthBlue", e.HealthBlue)
              .Add("maxHealth", PlayerData.instance != null
@@ -283,6 +291,21 @@ namespace HKCouchCoop
                  ? e.Input.Device.GUID.ToString() : null)
              .Add("deviceIndex", DeviceIndex(e.Input != null ? e.Input.Device : null));
             return j.Close();
+        }
+
+        /// <summary>
+        /// The revival shade a downed player left, if it is still standing.
+        /// Without this a run cannot distinguish "died and left a shade to
+        /// beat" from "died and vanished", which are the two outcomes the
+        /// death routing chooses between.
+        /// </summary>
+        private static string ShadeJson(CoopPlayer p)
+        {
+            if (p == null || p.Shade == null) return "null";
+            var pos = p.Shade.transform.position;
+            return Json.Object()
+                .AddRaw("pos", Json.Object().Add("x", pos.x).Add("y", pos.y).Close())
+                .Close();
         }
 
         private static void AddTransform(Json j, HeroController hero)
@@ -303,6 +326,47 @@ namespace HKCouchCoop
         /// a harness's virtual pads seem to do nothing: a pad the game never
         /// enumerated cannot join, and that failure is otherwise silent.
         /// </summary>
+        /// <summary>
+        /// Beat a downed player's revival shade, the way a teammate would.
+        ///
+        /// Dealt as a real HitInstance through HealthManager.Hit rather than by
+        /// destroying the object: the revive hangs off HealthManager.OnDeath,
+        /// and destroying the shade would skip that entirely — a test written
+        /// that way would report a working revive on a mod that never revives
+        /// anyone. IgnoreInvulnerable so a shade mid-spawn cannot refuse it.
+        /// </summary>
+        private static string KillShade(IDictionary<string, string> q)
+        {
+            int n;
+            string raw = null;
+            if (q != null) q.TryGetValue("n", out raw);
+            if (!int.TryParse(raw, out n) || n <= 0) n = 1;
+
+            var player = n == 1
+                ? CoopManager.OneRecord
+                : CoopManager.ExtraPlayers.FirstOrDefault(e => e.Number == n);
+
+            var j = Json.Object().Add("did", "killshade").Add("n", n);
+            if (player == null) return j.Add("ok", false).Add("why", "no such player").Close();
+            if (player.Shade == null) return j.Add("ok", false).Add("why", "no shade standing").Close();
+
+            var hm = player.Shade.GetComponent<HealthManager>()
+                     ?? player.Shade.GetComponentInChildren<HealthManager>();
+            if (hm == null) return j.Add("ok", false).Add("why", "shade has no HealthManager").Close();
+
+            hm.Hit(new HitInstance
+            {
+                Source = player.Shade,
+                AttackType = AttackTypes.Nail,
+                DamageDealt = 9999,
+                Direction = 0f,
+                IgnoreInvulnerable = true,
+                MagnitudeMultiplier = 1f,
+                Multiplier = 1f,
+            });
+            return j.Add("ok", true).Close();
+        }
+
         /// <summary>Kill one player outright, by number.</summary>
         private static string Kill(IDictionary<string, string> q)
         {
@@ -531,6 +595,8 @@ namespace HKCouchCoop
                     // outside: hazards depend on where the Knights happen to be
                     // standing. Debug channel only, like everything here.
                     return Kill(q);
+                case "killshade":
+                    return KillShade(q);
                 case "join":
                     CoopManager.Join();
                     break;
